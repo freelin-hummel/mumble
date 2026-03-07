@@ -314,6 +314,13 @@ Allow using compile-time timestamps
 All warnings are treated as errors.
 (Default: ON)
 
+### web-client
+
+Build the optional stubbed web/Electron client bootstrap in `clients/web-client`.
+This requires Node.js and npm and exposes helper targets such as `web-client-build`,
+`web-client-test` and `web-client-electron`.
+(Default: OFF)
+
 ### wasapi
 
 Build support for WASAPI.
@@ -333,5 +340,4 @@ Build support for XI2.
 
 Build support for zeroconf (mDNS/DNS-SD).
 (Default: ON)
-
 

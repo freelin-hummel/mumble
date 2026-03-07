@@ -63,6 +63,7 @@ option(server "Build the server (Murmur)" ON)
 option(packaging "Build package." OFF)
 option(tests "Build tests." ${packaging})
 option(plugins "Build plugins." ON)
+option(web-client "Build the optional web and Electron client bootstrap" OFF)
 
 if (WIN32)
 	option(skip-msi-rebuild "Prevent rebuilding installer MSI files from source. Used to be able to include signed MSI files in the bundle." OFF)
@@ -242,6 +243,10 @@ endif()
 
 if(client OR server)
 	add_subdirectory(src)
+endif()
+
+if(web-client)
+	add_subdirectory(clients)
 endif()
 
 add_subdirectory(auxiliary_files)
