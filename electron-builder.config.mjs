@@ -17,7 +17,7 @@ const config = {
   },
   files: ["dist/**/*", "package.json", "LICENSE"],
   extraMetadata: {
-    main: "dist/electron/main.js"
+    main: "dist/main/main.js"
   },
   mac: {
     category: "public.app-category.social-networking",
