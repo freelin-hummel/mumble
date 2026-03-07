@@ -15,11 +15,12 @@ import {
   Theme
 } from "@radix-ui/themes";
 import {
+  AvatarIcon,
   ChatBubbleIcon,
   GlobeIcon,
   LightningBoltIcon,
   MixerHorizontalIcon,
-  PersonIcon,
+  SpeakerOffIcon,
   SpeakerLoudIcon
 } from "@radix-ui/react-icons";
 import { QuickAction } from "./components/QuickAction";
@@ -165,7 +166,7 @@ export function App() {
                               placeItems: "center"
                             }}
                           >
-                            <PersonIcon />
+                            <AvatarIcon />
                           </Box>
                           <Text size="3">{user.name}</Text>
                         </Flex>
@@ -206,7 +207,7 @@ export function App() {
                 <Flex direction="column" gap="4">
                   <SectionHeader title="Quick actions" subtitle="Small, reusable controls" />
                   <Grid columns={{ initial: "1", sm: "2" }} gap="3">
-                    <QuickAction title="Mute" description="Push-to-talk guard" icon={<MicrophoneIcon />} />
+                    <QuickAction title="Mute" description="Push-to-talk guard" icon={<SpeakerOffIcon />} />
                     <QuickAction title="Output" description="Route to headset" icon={<SpeakerLoudIcon />} />
                     <QuickAction title="Latency" description="Realtime diagnostics" icon={<LightningBoltIcon />} />
                     <QuickAction title="Rooms" description="Switch channels" icon={<ChatBubbleIcon />} />
