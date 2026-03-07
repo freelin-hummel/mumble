@@ -37,7 +37,7 @@ test("AppClientStore hydrates persisted desktop preferences", () => {
   assert.equal(state.preferences.showLatencyDetails, true);
 });
 
-test("AppClientStore connect populates rooms, participants, and telemetry", async () => {
+test("AppClientStore connect preserves an empty live session until real data arrives", async () => {
   const persistedStates: unknown[] = [];
   const store = new AppClientStore({
     onPersist: (state) => {
@@ -53,10 +53,15 @@ test("AppClientStore connect populates rooms, participants, and telemetry", asyn
 
   const state = store.getState();
   assert.equal(state.connection.status, "connected");
-  assert.equal(state.activeChannelId, "lobby");
-  assert.equal(state.channels.length, 3);
-  assert.equal(state.participants.some((participant) => participant.isSelf && participant.name === "Scout"), true);
-  assert.equal(state.telemetry.latencyMs !== null, true);
+  assert.equal(state.connection.nickname, "Scout");
+  assert.equal(state.activeChannelId, null);
+  assert.deepEqual(state.channels, []);
+  assert.deepEqual(state.participants, []);
+  assert.deepEqual(state.telemetry, {
+    latencyMs: null,
+    jitterMs: null,
+    packetLoss: null
+  });
   assert.deepEqual(state.recentServers, ["voice.example.test:64738"]);
   assert.equal(persistedStates.length >= 2, true);
 });

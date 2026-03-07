@@ -98,20 +98,6 @@ const defaultTelemetry = Object.freeze<AppClientTelemetry>({
   packetLoss: null
 });
 
-const defaultChannels: AppClientChannel[] = [
-  { id: "lobby", name: "Lobby", parentId: null },
-  { id: "ops", name: "Ops", parentId: null },
-  { id: "afk", name: "AFK", parentId: null }
-];
-
-const createParticipants = (nickname: string): AppClientParticipant[] => ([
-  { id: "self", name: nickname, channelId: "lobby", status: "live", isSelf: true },
-  { id: "aster", name: "Aster", channelId: "lobby", status: "live" },
-  { id: "milo", name: "Milo", channelId: "lobby", status: "muted" },
-  { id: "quinn", name: "Quinn", channelId: "ops", status: "idle" },
-  { id: "rhea", name: "Rhea", channelId: "afk", status: "idle" }
-]);
-
 const cloneState = <T>(value: T): T => {
   if (typeof structuredClone === "function") {
     return structuredClone(value);
@@ -172,15 +158,6 @@ const normalizeRecentServers = (recentServers?: string[] | null) => {
 const buildRecentServers = (recentServers: string[], serverAddress: string) => {
   const normalizedAddress = serverAddress.trim();
   return [normalizedAddress, ...recentServers.filter((value) => value !== normalizedAddress)].slice(0, 5);
-};
-
-const buildTelemetry = (serverAddress: string): AppClientTelemetry => {
-  const seed = [...serverAddress].reduce((total, character) => total + character.charCodeAt(0), 0);
-  return {
-    latencyMs: 18 + (seed % 24),
-    jitterMs: 2 + (seed % 5),
-    packetLoss: Number(((seed % 4) * 0.1).toFixed(1))
-  };
 };
 
 const createDisconnectedState = (persistedState?: Partial<PersistedAppClientState> | null): AppClientState => ({
@@ -307,10 +284,10 @@ export class AppClientStore {
           status: "connected",
           error: null
         },
-        channels: cloneState(defaultChannels),
-        activeChannelId: "lobby",
-        participants: createParticipants(normalizedRequest.nickname),
-        telemetry: buildTelemetry(normalizedRequest.serverAddress)
+        channels: [],
+        activeChannelId: null,
+        participants: [],
+        telemetry: cloneState(defaultTelemetry)
       }));
       return this.getState();
     } catch (error) {

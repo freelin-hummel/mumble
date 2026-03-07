@@ -41,20 +41,6 @@ import {
   setDspFeature
 } from "./dspPipeline.mjs";
 
-const fallbackChannels: AppClientChannel[] = [
-  { id: "lobby", name: "Lobby", parentId: null },
-  { id: "ops", name: "Ops", parentId: null },
-  { id: "afk", name: "AFK", parentId: null }
-];
-
-const createFallbackParticipants = (nickname: string): AppClientParticipant[] => ([
-  { id: "self", name: nickname, channelId: "lobby", status: "live", isSelf: true },
-  { id: "aster", name: "Aster", channelId: "lobby", status: "live" },
-  { id: "milo", name: "Milo", channelId: "lobby", status: "muted" },
-  { id: "quinn", name: "Quinn", channelId: "ops", status: "idle" },
-  { id: "rhea", name: "Rhea", channelId: "afk", status: "idle" }
-]);
-
 const fallbackAppState: AppClientState = {
   connection: {
     status: "disconnected",
@@ -129,15 +115,6 @@ const buildRecentServers = (recentServers: string[], serverAddress: string) => {
   return [normalizedAddress, ...recentServers.filter((value) => value !== normalizedAddress)].slice(0, 5);
 };
 
-const buildTelemetry = (serverAddress: string): AppClientTelemetry => {
-  const seed = [...serverAddress].reduce((total, character) => total + character.charCodeAt(0), 0);
-  return {
-    latencyMs: 18 + (seed % 24),
-    jitterMs: 2 + (seed % 5),
-    packetLoss: Number(((seed % 4) * 0.1).toFixed(1))
-  };
-};
-
 const createFallbackConnectedState = (
   currentState: AppClientState,
   serverAddress: string,
@@ -150,10 +127,14 @@ const createFallbackConnectedState = (
     nickname,
     error: null
   },
-  channels: fallbackChannels,
-  activeChannelId: "lobby",
-  participants: createFallbackParticipants(nickname),
-  telemetry: buildTelemetry(serverAddress),
+  channels: [],
+  activeChannelId: null,
+  participants: [],
+  telemetry: {
+    latencyMs: null,
+    jitterMs: null,
+    packetLoss: null
+  },
   recentServers: buildRecentServers(currentState.recentServers, serverAddress)
 });
 
