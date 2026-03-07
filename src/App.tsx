@@ -786,7 +786,7 @@ export function App() {
       });
 
       if (result.canceled) {
-        setDiagnosticsMessage("Diagnostics export cancelled.");
+        setDiagnosticsMessage("Diagnostics export canceled.");
         return;
       }
 
