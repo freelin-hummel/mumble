@@ -18,10 +18,12 @@ import {
   GlobeIcon,
   LightningBoltIcon,
   MixerHorizontalIcon,
+  PersonIcon,
   SpeakerLoudIcon,
   SpeakerOffIcon
 } from "@radix-ui/react-icons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { appendLocalChatMessageState, mergeLiveSessionState } from "../electron/appClientState.js";
 import {
   applyOutputDeviceSelection,
   buildAudioDeviceState,
@@ -49,6 +51,7 @@ import {
   shortcutFromKeyboardEvent,
   stepVoiceActivation
 } from "./voiceActivation";
+import { createTestServerSessions } from "./testServerSession.js";
 
 const fallbackAppState: AppClientState = {
   connection: {
@@ -60,6 +63,7 @@ const fallbackAppState: AppClientState = {
   channels: [],
   activeChannelId: null,
   participants: [],
+  messages: [],
   audio: {
     inputDeviceId: SYSTEM_DEFAULT_DEVICE_ID,
     outputDeviceId: SYSTEM_DEFAULT_DEVICE_ID,
@@ -126,6 +130,36 @@ const statusCopy: Record<AppClientConnectionState["status"], string> = {
 const buildRecentServers = (recentServers: string[], serverAddress: string) => {
   const normalizedAddress = serverAddress.trim();
   return [normalizedAddress, ...recentServers.filter((value) => value !== normalizedAddress)].slice(0, 5);
+};
+
+const formatChatTimestamp = (value: string) => {
+  const timestamp = new Date(value);
+  if (Number.isNaN(timestamp.getTime())) {
+    return "just now";
+  }
+
+  return timestamp.toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit"
+  });
+};
+
+const getChannelDepth = (channels: AppClientState["channels"], channelId: string) => {
+  let depth = 0;
+  let currentChannel = channels.find((channel) => channel.id === channelId) ?? null;
+  const visitedChannelIds = new Set<string>();
+
+  while (currentChannel?.parentId) {
+    if (visitedChannelIds.has(currentChannel.parentId)) {
+      break;
+    }
+
+    visitedChannelIds.add(currentChannel.parentId);
+    currentChannel = channels.find((channel) => channel.id === currentChannel?.parentId) ?? null;
+    depth += 1;
+  }
+
+  return depth;
 };
 
 const createFallbackConnectedState = (
@@ -196,11 +230,13 @@ export function App() {
   const [serverAddress, setServerAddress] = useState("");
   const [nickname, setNickname] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
+  const [chatDraft, setChatDraft] = useState("");
   const [dspPipeline, setDspPipelineState] = useState(() => loadDspPipeline());
   const [voiceActivation, setVoiceActivation] = useState(() => createInitialVoiceActivationState());
   const [meteringError, setMeteringError] = useState<string | null>(null);
   const [pushToTalkPressed, setPushToTalkPressed] = useState(false);
   const outputPreviewRef = useRef<HTMLAudioElement>(null);
+  const fallbackLiveSessionTimersRef = useRef<number[]>([]);
   const pushToTalkPressedRef = useRef(false);
   const audioSettingsRef = useRef({
     captureEnabled: fallbackAppState.audio.captureEnabled,
@@ -231,6 +267,22 @@ export function App() {
   const updateLocalAppState = useCallback((updater: (state: AppClientState) => AppClientState) => {
     setAppState((currentState) => updater(currentState));
   }, []);
+
+  const clearFallbackLiveSessionTimers = useCallback(() => {
+    fallbackLiveSessionTimersRef.current.forEach((timerId) => {
+      window.clearTimeout(timerId);
+    });
+    fallbackLiveSessionTimersRef.current = [];
+  }, []);
+
+  const startFallbackLiveSession = useCallback((nextNickname: string) => {
+    clearFallbackLiveSessionTimers();
+    fallbackLiveSessionTimersRef.current = createTestServerSessions(nextNickname).map(({ delayMs, session }) => (
+      window.setTimeout(() => {
+        updateLocalAppState((currentState) => mergeLiveSessionState(currentState, session));
+      }, delayMs)
+    ));
+  }, [clearFallbackLiveSessionTimers, updateLocalAppState]);
 
   const updateAudioSettings = useCallback(async (audio: Partial<AppClientAudioSettings>) => {
     if (window.app?.updateAudioSettings) {
@@ -603,6 +655,10 @@ export function App() {
     };
   }, [syncFormState]);
 
+  useEffect(() => () => {
+    clearFallbackLiveSessionTimers();
+  }, [clearFallbackLiveSessionTimers]);
+
   const secureTransportLabel = useMemo(() => {
     if (handshakeState === "running") {
       return "handshake running";
@@ -646,6 +702,12 @@ export function App() {
     () => appState.participants.filter((participant) => participant.channelId === appState.activeChannelId),
     [appState.activeChannelId, appState.participants]
   );
+  const activeMessages = useMemo(
+    () => appState.messages.filter((message) => (
+      message.channelId === null || message.channelId === appState.activeChannelId
+    )),
+    [appState.activeChannelId, appState.messages]
+  );
   const connectionError = formError ?? appState.connection.error;
   const isElectronBridgeAvailable = Boolean(window.app?.getState);
   const voiceActivationLabel = useMemo(
@@ -680,6 +742,7 @@ export function App() {
           nickname: normalizedNickname
         });
         setAppState(nextState);
+        setChatDraft("");
       } catch (error) {
         setFormError(error instanceof Error ? error.message : "Unable to join voice.");
       }
@@ -703,11 +766,15 @@ export function App() {
         normalizedServerAddress,
         normalizedNickname
       ));
+      startFallbackLiveSession(normalizedNickname);
+      setChatDraft("");
     }, 250);
   };
 
   const disconnectFromServer = async () => {
     setFormError(null);
+    clearFallbackLiveSessionTimers();
+    setChatDraft("");
 
     if (window.app?.disconnect) {
       const nextState = await window.app.disconnect();
@@ -725,6 +792,7 @@ export function App() {
       channels: [],
       activeChannelId: null,
       participants: [],
+      messages: [],
       telemetry: {
         latencyMs: null,
         jitterMs: null,
@@ -756,6 +824,29 @@ export function App() {
     if (nextChannel) {
       await selectChannel(nextChannel.id);
     }
+  };
+
+  const sendChatMessage = async () => {
+    if (!chatDraft.trim()) {
+      setFormError("Enter a message before sending.");
+      return;
+    }
+
+    setFormError(null);
+
+    if (window.app?.sendChatMessage) {
+      try {
+        const nextState = await window.app.sendChatMessage(chatDraft);
+        setAppState(nextState);
+        setChatDraft("");
+      } catch (error) {
+        setFormError(error instanceof Error ? error.message : "Unable to send chat.");
+      }
+      return;
+    }
+
+    updateLocalAppState((currentState) => appendLocalChatMessageState(currentState, chatDraft));
+    setChatDraft("");
   };
 
   const applyPreset = (settings: typeof audioPresets[number]["settings"]) => {
@@ -1058,12 +1149,13 @@ export function App() {
                       {appState.channels.map((channel) => {
                         const participantCount = appState.participants.filter((participant) => participant.channelId === channel.id).length;
                         const isActive = channel.id === appState.activeChannelId;
+                        const depth = getChannelDepth(appState.channels, channel.id);
                         return (
                           <Button
                             key={channel.id}
                             variant={isActive ? "solid" : "soft"}
                             color={isActive ? "cyan" : undefined}
-                            style={{ justifyContent: "space-between" }}
+                            style={{ justifyContent: "space-between", paddingLeft: `${16 + (depth * 16)}px` }}
                             onClick={() => {
                               void selectChannel(channel.id);
                             }}
@@ -1123,6 +1215,67 @@ export function App() {
                         : "Disconnected. Participant presence appears here once the session is live."}
                     </Text>
                   )}
+                </Flex>
+              </Card>
+
+              <Card className="section-card fade-in delay-2">
+                <Flex direction="column" gap="4">
+                  <SectionHeader
+                    title="Chat"
+                    subtitle={activeChannel ? `Messages in ${activeChannel.name}` : "Basic room chat"}
+                  />
+                  {activeMessages.length > 0 ? (
+                    <Flex direction="column" gap="3" style={{ maxHeight: 280, overflowY: "auto", paddingRight: 4 }}>
+                      {activeMessages.map((message) => (
+                        <Card key={message.id} className="section-card">
+                          <Flex direction="column" gap="2">
+                            <Flex align="center" justify="between" gap="3">
+                              <Flex align="center" gap="2">
+                                <Text size="2" weight="bold">{message.author}</Text>
+                                {message.isSelf ? <Badge size="1" variant="soft">You</Badge> : null}
+                              </Flex>
+                              <Text size="1" color="gray">{formatChatTimestamp(message.sentAt)}</Text>
+                            </Flex>
+                            <Text size="2">{message.body}</Text>
+                            {message.channelId === null ? (
+                              <Text size="1" color="gray">Server notice</Text>
+                            ) : null}
+                          </Flex>
+                        </Card>
+                      ))}
+                    </Flex>
+                  ) : (
+                    <Text size="2" color="gray">
+                      {appState.connection.status === "connected"
+                        ? "No chat in the active room yet."
+                        : "Connect to a server to load room chat."}
+                    </Text>
+                  )}
+                  <form
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void sendChatMessage();
+                    }}
+                  >
+                    <Flex direction={{ initial: "column", sm: "row" }} gap="3">
+                      <TextField.Root
+                        placeholder={activeChannel ? `Message ${activeChannel.name}` : "Message the active room"}
+                        value={chatDraft}
+                        onChange={(event) => {
+                          setChatDraft(event.target.value);
+                        }}
+                        disabled={appState.connection.status !== "connected"}
+                        style={{ flex: 1 }}
+                      >
+                        <TextField.Slot>
+                          <ChatBubbleIcon />
+                        </TextField.Slot>
+                      </TextField.Root>
+                      <Button type="submit" disabled={appState.connection.status !== "connected"}>
+                        Send
+                      </Button>
+                    </Flex>
+                  </form>
                 </Flex>
               </Card>
 

@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld("app", {
   connect: (options: { serverAddress: string; nickname: string }) => ipcRenderer.invoke("app:connect", options),
   disconnect: () => ipcRenderer.invoke("app:disconnect"),
   selectChannel: (channelId: string) => ipcRenderer.invoke("app:select-channel", channelId),
+  sendChatMessage: (body: string) => ipcRenderer.invoke("app:send-chat-message", body),
   updateAudioSettings: (audio: Partial<AppClientAudioSettings>) => ipcRenderer.invoke("app:update-audio", audio),
   updatePreferences: (preferences: Partial<AppClientPreferences>) => ipcRenderer.invoke("app:update-preferences", preferences),
   onStateChanged: (listener: (state: AppClientState) => void) => {
