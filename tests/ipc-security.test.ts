@@ -60,8 +60,10 @@ test("preload exposes only the whitelisted app and voice APIs", () => {
   void preloadApi.app.connect({ serverAddress: "voice.example.test:64738", nickname: "Scout" });
   void preloadApi.app.disconnect();
   void preloadApi.app.selectChannel("lobby");
+  void preloadApi.app.sendChatMessage("Ready to roll");
   void preloadApi.app.updateAudioSettings({ inputGain: 120 });
   void preloadApi.app.updatePreferences({ autoReconnect: false });
+  void preloadApi.app.exportDiagnostics();
   const unsubscribeState = preloadApi.app.onStateChanged(() => {});
 
   void preloadApi.voice.connect({ host: "voice.example.test", port: 64738 });
@@ -83,8 +85,10 @@ test("preload exposes only the whitelisted app and voice APIs", () => {
       APP_INVOKE_CHANNELS.connect,
       APP_INVOKE_CHANNELS.disconnect,
       APP_INVOKE_CHANNELS.selectChannel,
+      APP_INVOKE_CHANNELS.sendChatMessage,
       APP_INVOKE_CHANNELS.updateAudioSettings,
       APP_INVOKE_CHANNELS.updatePreferences,
+      APP_INVOKE_CHANNELS.exportDiagnostics,
       VOICE_INVOKE_CHANNELS.connect,
       VOICE_INVOKE_CHANNELS.send,
       VOICE_INVOKE_CHANNELS.disconnect,

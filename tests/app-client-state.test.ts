@@ -63,6 +63,7 @@ test("AppClientStore connect preserves an empty live session until real data arr
   assert.equal(state.activeChannelId, null);
   assert.deepEqual(state.channels, []);
   assert.deepEqual(state.participants, []);
+  assert.deepEqual(state.messages, []);
   assert.deepEqual(state.telemetry, {
     latencyMs: null,
     jitterMs: null,
@@ -351,4 +352,120 @@ test("AppClientStore incrementally applies channel and participant updates", asy
   state = store.getState();
   assert.deepEqual(state.channels.map((channel) => channel.id), ["root"]);
   assert.equal(state.activeChannelId, "root");
+});
+
+test("AppClientStore syncLiveSession applies channel tree, active room, roster, and chat updates", async () => {
+  const store = new AppClientStore({
+    waitForConnection: async () => {}
+  });
+
+  await store.connect({
+    serverAddress: "voice.example.test:64738",
+    nickname: "Scout"
+  });
+
+  const nextState = store.syncLiveSession({
+    channels: [
+      { id: "root", name: "Root", parentId: null },
+      { id: "squad", name: "Squad", parentId: "root" }
+    ],
+    participants: [
+      { id: "self", name: "Scout", channelId: "squad", status: "live", isSelf: true },
+      { id: "guest", name: "Guest", channelId: "root", status: "idle" },
+      { id: "orphan", name: "Orphan", channelId: "missing", status: "live" }
+    ],
+    messages: [
+      {
+        id: "welcome",
+        author: "Server",
+        body: "Welcome aboard",
+        channelId: null,
+        sentAt: "2026-03-07T22:00:00.000Z"
+      },
+      {
+        id: "briefing",
+        author: "Guest",
+        body: "Squad briefing starts now.",
+        channelId: "squad",
+        sentAt: "2026-03-07T22:00:03.000Z"
+      },
+      {
+        id: "invalid-room",
+        author: "Ghost",
+        body: "Hidden room message",
+        channelId: "missing",
+        sentAt: "2026-03-07T22:00:05.000Z"
+      }
+    ],
+    telemetry: {
+      latencyMs: 41.26,
+      jitterMs: 7.21,
+      packetLoss: 0
+    }
+  });
+
+  assert.equal(nextState.activeChannelId, "squad");
+  assert.deepEqual(nextState.channels.map((channel) => ({
+    id: channel.id,
+    parentId: channel.parentId,
+    depth: channel.depth,
+    participantIds: channel.participantIds
+  })), [
+    { id: "root", parentId: null, depth: 0, participantIds: ["guest"] },
+    { id: "squad", parentId: "root", depth: 1, participantIds: ["self"] }
+  ]);
+  assert.deepEqual(nextState.participants, [
+    { id: "guest", name: "Guest", channelId: "root", status: "idle", isSelf: undefined },
+    { id: "self", name: "Scout", channelId: "squad", status: "live", isSelf: true }
+  ]);
+  assert.deepEqual(nextState.messages, [
+    {
+      id: "welcome",
+      author: "Server",
+      body: "Welcome aboard",
+      channelId: null,
+      sentAt: "2026-03-07T22:00:00.000Z",
+      isSelf: undefined
+    },
+    {
+      id: "briefing",
+      author: "Guest",
+      body: "Squad briefing starts now.",
+      channelId: "squad",
+      sentAt: "2026-03-07T22:00:03.000Z",
+      isSelf: undefined
+    }
+  ]);
+  assert.deepEqual(nextState.telemetry, {
+    latencyMs: 41.3,
+    jitterMs: 7.2,
+    packetLoss: 0
+  });
+});
+
+test("AppClientStore sendChatMessage appends a self-authored room message", async () => {
+  const store = new AppClientStore({
+    waitForConnection: async () => {}
+  });
+
+  await store.connect({
+    serverAddress: "voice.example.test:64738",
+    nickname: "Scout"
+  });
+
+  store.syncLiveSession({
+    channels: [
+      { id: "lobby", name: "Lobby", parentId: null }
+    ],
+    participants: [
+      { id: "self", name: "Scout", channelId: "lobby", status: "live", isSelf: true }
+    ]
+  });
+
+  const nextState = store.sendChatMessage("  Ready to roll.  ");
+  assert.equal(nextState.messages.length, 1);
+  assert.equal(nextState.messages[0]?.author, "Scout");
+  assert.equal(nextState.messages[0]?.body, "Ready to roll.");
+  assert.equal(nextState.messages[0]?.channelId, "lobby");
+  assert.equal(nextState.messages[0]?.isSelf, true);
 });

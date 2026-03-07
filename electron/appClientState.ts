@@ -33,6 +33,15 @@ export type AppClientParticipant = {
   isSelf?: boolean;
 };
 
+export type AppClientChatMessage = {
+  id: string;
+  author: string;
+  body: string;
+  channelId: string | null;
+  sentAt: string;
+  isSelf?: boolean;
+};
+
 export type AppClientAudioSettings = {
   inputDeviceId: string;
   outputDeviceId: string;
@@ -74,6 +83,7 @@ export type AppClientState = {
   channels: AppClientChannel[];
   activeChannelId: string | null;
   participants: AppClientParticipant[];
+  messages: AppClientChatMessage[];
   audio: AppClientAudioSettings;
   preferences: AppClientPreferences;
   telemetry: AppClientTelemetry;
@@ -143,6 +153,14 @@ export type AppClientSessionSnapshot = {
   activeChannelId?: string | null;
 };
 
+export type AppClientLiveSession = {
+  channels: AppClientChannelSnapshot[];
+  participants: AppClientParticipantSnapshot[];
+  messages?: AppClientChatMessage[];
+  activeChannelId?: string | null;
+  telemetry?: Partial<AppClientTelemetry> | null;
+};
+
 const defaultAudioSettings = Object.freeze<AppClientAudioSettings>({
   inputDeviceId: "default",
   outputDeviceId: "default",
@@ -174,6 +192,7 @@ const defaultChannelPermissions = Object.freeze<AppClientChannelPermissions>({
   move: false,
   write: false
 });
+const MAX_CHAT_MESSAGES = 100;
 
 const cloneState = <T>(value: T): T => {
   if (typeof structuredClone === "function") {
@@ -510,6 +529,7 @@ const createDisconnectedState = (persistedState?: PersistedAppClientState | null
   channels: [],
   activeChannelId: null,
   participants: [],
+  messages: [],
   audio: normalizeAudioSettings(persistedState?.audio),
   preferences: normalizePreferences(persistedState?.preferences),
   telemetry: cloneState(defaultTelemetry),
@@ -577,6 +597,106 @@ const assertConnectRequest = ({ serverAddress, nickname }: AppClientConnectReque
   };
 };
 
+const normalizeChatMessageList = (messages: AppClientChatMessage[], channelIds: Set<string>) => {
+  const seenMessageIds = new Set<string>();
+  return messages.filter((message) => {
+    if (typeof message.id !== "string" || message.id.length === 0 || seenMessageIds.has(message.id)) {
+      return false;
+    }
+
+    if (typeof message.author !== "string" || message.author.trim().length === 0) {
+      return false;
+    }
+
+    if (typeof message.body !== "string" || message.body.trim().length === 0) {
+      return false;
+    }
+
+    if (message.channelId !== null && !channelIds.has(message.channelId)) {
+      return false;
+    }
+
+    seenMessageIds.add(message.id);
+    return true;
+  }).map((message) => ({
+    id: message.id,
+    author: message.author.trim(),
+    body: message.body.trim(),
+    channelId: message.channelId,
+    sentAt: Number.isNaN(Date.parse(message.sentAt)) ? new Date(0).toISOString() : message.sentAt,
+    isSelf: message.isSelf === true ? true : undefined
+  })).slice(-MAX_CHAT_MESSAGES);
+};
+
+const normalizeTelemetryMetric = (value: number | null | undefined, fallback: number | null) => {
+  if (value === null) {
+    return null;
+  }
+
+  if (typeof value !== "number" || Number.isNaN(value) || value < 0) {
+    return fallback;
+  }
+
+  return Math.round(value * 10) / 10;
+};
+
+export const mergeLiveSessionState = (currentState: AppClientState, session: AppClientLiveSession): AppClientState => {
+  const normalizedSessionState = normalizeSessionState(
+    session.channels,
+    session.participants,
+    session.activeChannelId,
+    currentState.activeChannelId
+  );
+  const channelIds = new Set(normalizedSessionState.channels.map((channel) => channel.id));
+  const messages = normalizeChatMessageList(session.messages ?? currentState.messages, channelIds);
+
+  return {
+    ...currentState,
+    channels: normalizedSessionState.channels,
+    activeChannelId: normalizedSessionState.activeChannelId,
+    participants: normalizedSessionState.participants,
+    messages,
+    telemetry: {
+      latencyMs: normalizeTelemetryMetric(session.telemetry?.latencyMs, currentState.telemetry.latencyMs),
+      jitterMs: normalizeTelemetryMetric(session.telemetry?.jitterMs, currentState.telemetry.jitterMs),
+      packetLoss: normalizeTelemetryMetric(session.telemetry?.packetLoss, currentState.telemetry.packetLoss)
+    }
+  };
+};
+
+const buildLocalChatMessageId = () => {
+  if (typeof globalThis.crypto?.randomUUID === "function") {
+    return globalThis.crypto.randomUUID();
+  }
+
+  return `chat-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+};
+
+export const appendLocalChatMessageState = (currentState: AppClientState, body: string): AppClientState => {
+  if (currentState.connection.status !== "connected") {
+    throw new Error("Join a server before sending chat.");
+  }
+
+  const normalizedBody = body.trim();
+  if (!normalizedBody) {
+    throw new Error("Enter a message before sending.");
+  }
+
+  const nextMessage: AppClientChatMessage = {
+    id: buildLocalChatMessageId(),
+    author: currentState.connection.nickname || "You",
+    body: normalizedBody,
+    channelId: currentState.activeChannelId,
+    sentAt: new Date().toISOString(),
+    isSelf: true
+  };
+
+  return {
+    ...currentState,
+    messages: [...currentState.messages, nextMessage].slice(-MAX_CHAT_MESSAGES)
+  };
+};
+
 export class AppClientStore {
   private state: AppClientState;
   private readonly listeners = new Set<AppClientListener>();
@@ -630,6 +750,7 @@ export class AppClientStore {
         channels: [],
         activeChannelId: null,
         participants: [],
+        messages: [],
         telemetry: cloneState(defaultTelemetry)
       }));
       this.log("info", "connection.connect.succeeded", {
@@ -669,6 +790,7 @@ export class AppClientStore {
       channels: [],
       activeChannelId: null,
       participants: [],
+      messages: [],
       telemetry: cloneState(defaultTelemetry)
     }));
     return this.getState();
@@ -903,6 +1025,18 @@ export class AppClientStore {
       })
     }));
     this.log("info", "preferences.updated", cloneState(preferences as Record<string, unknown>));
+    return this.getState();
+  }
+
+  public syncLiveSession(session: AppClientLiveSession) {
+    this.updateState((currentState) => currentState.connection.status === "connected"
+      ? mergeLiveSessionState(currentState, session)
+      : currentState);
+    return this.getState();
+  }
+
+  public sendChatMessage(body: string) {
+    this.updateState((currentState) => appendLocalChatMessageState(currentState, body));
     return this.getState();
   }
 

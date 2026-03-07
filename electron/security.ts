@@ -19,6 +19,7 @@ export const APP_API_WHITELIST = Object.freeze([
   "connect",
   "disconnect",
   "selectChannel",
+  "sendChatMessage",
   "updateAudioSettings",
   "updatePreferences",
   "exportDiagnostics",
@@ -40,6 +41,7 @@ export const APP_INVOKE_CHANNELS = Object.freeze({
   connect: "app:connect",
   disconnect: "app:disconnect",
   selectChannel: "app:select-channel",
+  sendChatMessage: "app:send-chat-message",
   updateAudioSettings: "app:update-audio",
   updatePreferences: "app:update-preferences",
   exportDiagnostics: "app:export-diagnostics"
@@ -101,6 +103,7 @@ export type PreloadAppApi = Readonly<{
   connect: (options: { serverAddress: string; nickname: string }) => Promise<AppClientState>;
   disconnect: () => Promise<AppClientState>;
   selectChannel: (channelId: string) => Promise<AppClientState>;
+  sendChatMessage: (body: string) => Promise<AppClientState>;
   updateAudioSettings: (audio: Partial<AppClientAudioSettings>) => Promise<AppClientState>;
   updatePreferences: (preferences: Partial<AppClientPreferences>) => Promise<AppClientState>;
   exportDiagnostics: (snapshot?: RendererDiagnosticsSnapshot) => Promise<{
@@ -202,6 +205,7 @@ export const createPreloadApi = (
     connect: (options) => invoke(ipcRenderer, APP_INVOKE_CHANNELS.connect, options),
     disconnect: () => invoke(ipcRenderer, APP_INVOKE_CHANNELS.disconnect),
     selectChannel: (channelId) => invoke(ipcRenderer, APP_INVOKE_CHANNELS.selectChannel, channelId),
+    sendChatMessage: (body) => invoke(ipcRenderer, APP_INVOKE_CHANNELS.sendChatMessage, body),
     updateAudioSettings: (audio) => invoke(ipcRenderer, APP_INVOKE_CHANNELS.updateAudioSettings, audio),
     updatePreferences: (preferences) => invoke(ipcRenderer, APP_INVOKE_CHANNELS.updatePreferences, preferences),
     exportDiagnostics: (snapshot) => invoke(ipcRenderer, APP_INVOKE_CHANNELS.exportDiagnostics, snapshot),

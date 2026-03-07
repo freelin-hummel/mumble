@@ -49,6 +49,15 @@ declare global {
     isSelf?: boolean;
   }
 
+  interface AppClientChatMessage {
+    id: string;
+    author: string;
+    body: string;
+    channelId: string | null;
+    sentAt: string;
+    isSelf?: boolean;
+  }
+
   interface AppClientAudioSettings {
     inputDeviceId: string;
     outputDeviceId: string;
@@ -84,6 +93,7 @@ declare global {
     channels: AppClientChannel[];
     activeChannelId: string | null;
     participants: AppClientParticipant[];
+    messages: AppClientChatMessage[];
     audio: AppClientAudioSettings;
     preferences: AppClientPreferences;
     telemetry: AppClientTelemetry;
@@ -117,6 +127,7 @@ declare global {
       connect?: (options: { serverAddress: string; nickname: string }) => Promise<AppClientState>;
       disconnect?: () => Promise<AppClientState>;
       selectChannel?: (channelId: string) => Promise<AppClientState>;
+      sendChatMessage?: (body: string) => Promise<AppClientState>;
       updateAudioSettings?: (audio: Partial<AppClientAudioSettings>) => Promise<AppClientState>;
       updatePreferences?: (preferences: Partial<AppClientPreferences>) => Promise<AppClientState>;
       exportDiagnostics?: (snapshot?: RendererDiagnosticsSnapshot) => Promise<DiagnosticsExportResult>;
