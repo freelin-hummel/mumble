@@ -64,6 +64,9 @@ Packaging works unsigned by default. To enable signing in local builds or CI, pr
 
 `.github/workflows/electron-package.yml` runs `npm test` and then packages the app on `ubuntu-latest`, `macos-latest`, and `windows-latest`, uploading the generated `release/` artifacts without publishing them.
 
+The Electron shell exposes a secure voice self-test that performs an authenticated
+handshake, derives fresh session keys, and validates encrypted UDP voice transport.
+
 ## Repo layout
 
 - electron/ - Electron main and preload processes
