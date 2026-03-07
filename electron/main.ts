@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain } from "electron";
 import { fileURLToPath } from "node:url";
+import { registerAppStateIpc } from "./appStateIpc.js";
 import { runSecureVoiceSelfTest } from "./secureVoice.js";
 import { registerVoiceTransportIpc, shutdownVoiceTransport } from "./voiceTransportIpc.js";
 
@@ -26,6 +27,7 @@ const createWindow = () => {
     mainWindow?.show();
   });
 
+  const devServerUrl = process.env.VITE_DEV_SERVER_URL ?? process.env.ELECTRON_RENDERER_URL;
   const devServerUrl = process.env.ELECTRON_RENDERER_URL;
   if (devServerUrl) {
     mainWindow.loadURL(devServerUrl);
@@ -37,6 +39,7 @@ const createWindow = () => {
 
 app.whenReady().then(() => {
   ipcMain.handle("voice:run-self-test", () => runSecureVoiceSelfTest());
+  registerAppStateIpc();
   registerVoiceTransportIpc();
   createWindow();
 

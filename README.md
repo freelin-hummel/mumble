@@ -77,5 +77,6 @@ handshake, derives fresh session keys, and validates encrypted UDP voice transpo
 
 ## Notes
 
+- Follow-up tracks after this milestone: real Mumble protocol/session sync, native tray/menu/window integrations, and live audio metering plus transport telemetry.
 - Legacy documentation and native build instructions have been removed for now.
 - If you need the old code, look under legacy/ and treat it as read-only reference.
