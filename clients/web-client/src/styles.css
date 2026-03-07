@@ -44,8 +44,36 @@
 	--button-secondary: linear-gradient(180deg, var(--button-secondary-start) 0%, var(--button-secondary-mid) 48%, var(--button-secondary-end) 100%);
 	--success: #95fb58;
 	--shadow: 0 18px 36px rgba(4, 4, 12, 0.5);
-	--shell-max-width: 1280px;
-	--font-size-display: clamp(1.4rem, calc(1.1rem + 1.5vw), 2.2rem);
+	--shell-max-width: 1180px;
+	--shell-columns: minmax(250px, 292px) minmax(0, 1fr);
+	--shell-padding: 0.55rem;
+	--shell-gap: 0.55rem;
+	--stack-gap: 0.7rem;
+	--card-padding: 0.6rem;
+	--panel-padding: 0.58rem;
+	--grid-gap: 0.55rem;
+	--section-gap: 0.6rem;
+	--control-padding-y: 0.42rem;
+	--control-padding-x: 0.62rem;
+	--input-padding-y: 0.5rem;
+	--input-padding-x: 0.62rem;
+	--chip-padding-y: 0.22rem;
+	--chip-padding-x: 0.45rem;
+	--compact-gap: 0.45rem;
+	--compact-gap-tight: 0.28rem;
+	--ultra-compact-gap: 0.2rem;
+	--heading-stack-gap: 0.2rem;
+	--nav-viewport-offset: 250px;
+	--list-indent: 0.95rem;
+	--action-row-gap: 0.35rem;
+	--header-ribbon-height: 4px;
+	--font-size-display: clamp(1.18rem, calc(0.98rem + 1.1vw), 1.72rem);
+	--font-size-body-compact: 0.84rem;
+	--font-size-label-compact: 0.7rem;
+	--font-size-meta-compact: 0.64rem;
+	--font-size-action-compact: 0.78rem;
+	--font-size-body-small: 0.82rem;
+	--shell-padding-mobile: 0.45rem;
 	--font-weight-semibold: 600;
 	--font-weight-bold: 700;
 	--font-display: system-ui, "Trebuchet MS", Tahoma, Verdana, sans-serif;
@@ -118,7 +146,7 @@ input {
 		repeating-linear-gradient(90deg, rgba(149, 251, 88, 0.07) 0 1px, transparent 1px 8px),
 		linear-gradient(180deg, #0a0d12 0%, #131b1f 100%);
 	color: var(--lcd-text);
-	padding: 0.75rem 0.85rem;
+	padding: var(--input-padding-y) var(--input-padding-x);
 	box-shadow:
 		inset 1px 1px 0 rgba(255, 255, 255, 0.06),
 		inset -1px -1px 0 rgba(0, 0, 0, 0.72);
@@ -126,19 +154,19 @@ input {
 
 .shell {
 	display: grid;
-	grid-template-columns: minmax(290px, 340px) minmax(0, 1fr);
+	grid-template-columns: var(--shell-columns);
 	min-height: 100vh;
 	max-width: var(--shell-max-width);
 	margin: 0 auto;
-	padding: 0.9rem;
-	gap: 0.85rem;
+	padding: var(--shell-padding);
+	gap: var(--shell-gap);
 }
 
 .sidebar,
 .content {
 	display: flex;
 	flex-direction: column;
-	gap: 1rem;
+	gap: var(--stack-gap);
 }
 
 .card {
@@ -146,7 +174,7 @@ input {
 	border: 1px solid var(--border-dark);
 	border-radius: 4px;
 	box-shadow: var(--shadow);
-	padding: 0.85rem;
+	padding: var(--card-padding);
 	position: relative;
 	backdrop-filter: blur(2px);
 }
@@ -175,12 +203,13 @@ input {
 .hero h1,
 .detail-hero h1,
 .empty-state h1 {
-	margin: 0.35rem 0 0;
+	margin: var(--heading-stack-gap) 0 0;
+	line-height: 1.1;
 }
 
 .eyebrow {
 	margin: 0;
-	font-size: 0.7rem;
+	font-size: 0.62rem;
 	letter-spacing: 0.14em;
 	text-transform: uppercase;
 	color: var(--accent-warm);
@@ -199,28 +228,28 @@ input {
 
 .search span {
 	display: block;
-	margin-bottom: 0.4rem;
+	margin-bottom: 0.22rem;
 	color: var(--muted);
 }
 
 .nav {
 	display: flex;
 	flex-direction: column;
-	gap: 0.7rem;
+	gap: var(--compact-gap);
 	overflow: auto;
-	max-height: calc(100vh - 310px);
+	max-height: calc(100vh - var(--nav-viewport-offset));
 	background: linear-gradient(180deg, #39426a 0%, #202644 55%, #121524 100%);
 }
 
 .nav-group {
 	display: flex;
 	flex-direction: column;
-	gap: 0.3rem;
+	gap: var(--compact-gap-tight);
 }
 
 .nav-group p {
 	margin: 0 0 0.15rem;
-	font-size: 0.72rem;
+	font-size: var(--font-size-label-compact);
 	color: var(--accent-warm);
 	text-transform: uppercase;
 	letter-spacing: 0.12em;
@@ -234,23 +263,24 @@ input {
 	background: var(--button-chrome);
 	border-color: var(--border-dark);
 	color: var(--button-text);
-	padding: 0.55rem 0.75rem;
+	padding: var(--control-padding-y) var(--control-padding-x);
 	font-weight: var(--font-weight-semibold);
-	font-size: 0.88rem;
+	font-size: var(--font-size-body-compact);
 	text-transform: uppercase;
+	line-height: 1.1;
 }
 
 .nav-link {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-	gap: 0.75rem;
+	gap: var(--compact-gap);
 	border-radius: 2px;
 }
 
 .nav-link small {
 	color: var(--button-text-muted);
-	font-size: 0.72rem;
+	font-size: var(--font-size-meta-compact);
 }
 
 .nav-overview.active,
@@ -273,13 +303,13 @@ input {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-	gap: 1rem;
+	gap: var(--section-gap);
 }
 
 .hero,
 .detail-hero {
 	display: grid;
-	gap: 0.8rem;
+	gap: var(--compact-gap);
 }
 
 .topbar-actions,
@@ -292,20 +322,22 @@ input {
 .primary-action {
 	background: var(--button-chrome);
 	color: var(--button-text);
-	padding: 0.55rem 0.85rem;
+	padding: var(--control-padding-y) calc(var(--control-padding-x) + 0.08rem);
 	text-transform: uppercase;
-	font-size: 0.82rem;
+	font-size: var(--font-size-action-compact);
 	font-weight: var(--font-weight-bold);
+	line-height: 1.1;
 }
 
 .secondary-action {
 	background: var(--button-secondary);
 	border-color: var(--border-dark);
 	color: var(--button-text);
-	padding: 0.55rem 0.85rem;
+	padding: var(--control-padding-y) calc(var(--control-padding-x) + 0.08rem);
 	text-transform: uppercase;
-	font-size: 0.82rem;
+	font-size: var(--font-size-action-compact);
 	font-weight: var(--font-weight-bold);
+	line-height: 1.1;
 }
 
 .stats-grid,
@@ -315,7 +347,7 @@ input {
 .mock-grid,
 .chip-grid {
 	display: grid;
-	gap: 0.75rem;
+	gap: var(--grid-gap);
 }
 
 .stats-grid {
@@ -342,7 +374,7 @@ input {
 	background: var(--panel-muted);
 	border: 1px solid rgba(0, 0, 0, 0.48);
 	border-radius: 3px;
-	padding: 0.8rem;
+	padding: var(--panel-padding);
 	box-shadow:
 		inset 1px 1px 0 rgba(255, 255, 255, 0.2),
 		inset -1px -1px 0 rgba(0, 0, 0, 0.48);
@@ -351,11 +383,11 @@ input {
 .stat {
 	display: flex;
 	flex-direction: column;
-	gap: 0.45rem;
+	gap: var(--ultra-compact-gap);
 }
 
 .stat-value {
-	font-size: 2.1rem;
+	font-size: 1.72rem;
 	font-weight: var(--font-weight-bold);
 	color: var(--accent);
 	font-family: var(--font-mono);
@@ -369,7 +401,7 @@ input {
 .group-list,
 .runtime-card ul {
 	margin: 0;
-	padding-left: 1.1rem;
+	padding-left: var(--list-indent);
 }
 
 .link-button {
@@ -389,13 +421,13 @@ input {
 	padding: 0;
 	margin: 0;
 	display: grid;
-	gap: 0.85rem;
+	gap: var(--grid-gap);
 }
 
 .step-list li {
 	display: grid;
-	grid-template-columns: 2.1rem 1fr;
-	gap: 0.9rem;
+	grid-template-columns: 1.7rem 1fr;
+	gap: var(--grid-gap);
 	align-items: start;
 }
 
@@ -403,8 +435,8 @@ input {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	width: 2.1rem;
-	height: 2.1rem;
+	width: 1.7rem;
+	height: 1.7rem;
 	border-radius: 2px;
 	background: linear-gradient(180deg, var(--accent-orange-start) 0%, var(--accent-orange-end) 100%);
 	color: var(--accent-warm);
@@ -426,10 +458,11 @@ input {
 	border-radius: 2px;
 	border: 1px solid var(--border-dark);
 	background: linear-gradient(180deg, #0d1118 0%, #121a24 100%);
-	padding: 0.35rem 0.65rem;
+	padding: var(--chip-padding-y) var(--chip-padding-x);
 	color: var(--accent);
 	font-family: var(--font-mono);
-	font-size: 0.8rem;
+	font-size: var(--font-size-label-compact);
+	line-height: 1;
 }
 
 .status-badge {
@@ -444,19 +477,19 @@ input {
 .mock-panel {
 	display: flex;
 	flex-direction: column;
-	gap: 0.8rem;
+	gap: var(--compact-gap);
 }
 
 .mock-panel header {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-	gap: 0.75rem;
+	gap: var(--compact-gap);
 }
 
 .empty-state {
 	display: grid;
-	gap: 1rem;
+	gap: var(--stack-gap);
 	justify-items: start;
 }
 
@@ -474,7 +507,7 @@ input {
 	left: 0;
 	right: 0;
 	top: 0;
-	height: 6px;
+	height: var(--header-ribbon-height);
 	background: linear-gradient(90deg, var(--accent-ribbon-start) 0%, var(--accent-ribbon-mid) 28%, var(--accent-ribbon-end) 62%, var(--accent-ribbon-start) 100%);
 	box-shadow: 0 1px 0 rgba(255, 255, 255, 0.24);
 }
@@ -519,6 +552,8 @@ input {
 .runtime-card li,
 .mock-panel p {
 	color: var(--muted-strong);
+	font-size: var(--font-size-body-small);
+	line-height: 1.28;
 }
 
 .hero .lede,
@@ -528,6 +563,22 @@ input {
 	letter-spacing: 0.04em;
 }
 
+.section-heading h2,
+.group-card h3,
+.highlight-panel h3,
+.mock-panel h3,
+.runtime-card h3 {
+	margin: 0.12rem 0 0;
+	line-height: 1.15;
+}
+
+.highlight-panel p,
+.group-card li,
+.runtime-card li,
+.mock-panel p {
+	margin: 0;
+}
+
 .topbar,
 .hero,
 .detail-hero,
@@ -535,6 +586,13 @@ input {
 	box-shadow:
 		0 18px 36px rgba(4, 4, 12, 0.38),
 		inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.topbar-actions,
+.hero-actions,
+.badge-stack,
+.panel-actions {
+	row-gap: var(--action-row-gap);
 }
 
 @media (max-width: 1024px) {
@@ -555,11 +613,11 @@ input {
 
 @media (max-width: 640px) {
 	.shell {
-		padding: 0.75rem;
+		padding: var(--shell-padding-mobile);
 	}
 
 	.card {
-		padding: 1rem;
+		padding: var(--card-padding);
 		border-radius: 8px;
 	}
 
