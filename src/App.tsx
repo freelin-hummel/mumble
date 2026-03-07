@@ -1,3 +1,4 @@
+import { useMemo, useState } from "react";
 import {
   Badge,
   Box,
@@ -18,7 +19,7 @@ import {
   GlobeIcon,
   LightningBoltIcon,
   MixerHorizontalIcon,
-  MicrophoneIcon,
+  PersonIcon,
   SpeakerLoudIcon
 } from "@radix-ui/react-icons";
 import { QuickAction } from "./components/QuickAction";
@@ -39,9 +40,46 @@ const audioPresets = [
 ];
 
 export function App() {
+  const [handshakeState, setHandshakeState] = useState<"idle" | "running" | "success" | "error">("idle");
+  const [selfTestResult, setSelfTestResult] = useState<SecureVoiceSelfTestResult | null>(null);
+  const [selfTestError, setSelfTestError] = useState<string | null>(null);
   const platformLabel = typeof window !== "undefined" && window.app
     ? window.app.platform
     : "web";
+  const secureTransportLabel = useMemo(() => {
+    if (handshakeState === "running") {
+      return "handshake running";
+    }
+
+    if (handshakeState === "success") {
+      return "encrypted UDP ready";
+    }
+
+    if (handshakeState === "error") {
+      return "self-test failed";
+    }
+
+    return "awaiting self-test";
+  }, [handshakeState]);
+
+  const runSelfTest = async () => {
+    if (!window.app?.runSecureVoiceSelfTest || handshakeState === "running") {
+      return;
+    }
+
+    setHandshakeState("running");
+    setSelfTestResult(null);
+    setSelfTestError(null);
+
+    try {
+      const result = await window.app.runSecureVoiceSelfTest();
+      setSelfTestResult(result);
+      setHandshakeState("success");
+    } catch (error) {
+      setSelfTestError(error instanceof Error ? error.message : "Unknown handshake failure");
+      setHandshakeState("error");
+    }
+  };
 
   return (
     <Theme accentColor="cyan" grayColor="slate" radius="large" scaling="105%">
@@ -75,6 +113,10 @@ export function App() {
                     <Flex gap="3" align="center">
                       <StatusChip status="live" label="Low jitter" />
                       <StatusChip status="idle" label={`Running on ${platformLabel}`} />
+                      <StatusChip
+                        status={handshakeState === "success" ? "live" : handshakeState === "error" ? "muted" : "idle"}
+                        label={secureTransportLabel}
+                      />
                     </Flex>
                   </Flex>
                 </Box>
@@ -123,7 +165,7 @@ export function App() {
                               placeItems: "center"
                             }}
                           >
-                            <MicrophoneIcon />
+                            <PersonIcon />
                           </Box>
                           <Text size="3">{user.name}</Text>
                         </Flex>
@@ -173,18 +215,44 @@ export function App() {
               </Card>
 
               <Card className="section-card fade-in delay-3">
-                <Flex direction="column" gap="4">
-                  <SectionHeader title="Session notes" subtitle="Voice-ready handoff" />
-                  <Text size="2" color="gray">
-                    This repo now targets a single Electron client. Legacy native code is preserved
-                    under the legacy/ folder for reference only.
-                  </Text>
-                  <Flex gap="3">
-                    <Button variant="solid">Open release checklist</Button>
-                    <Button variant="soft">Sync settings</Button>
+                  <Flex direction="column" gap="4">
+                    <SectionHeader title="Secure transport" subtitle="Authenticated handshake + encrypted UDP" />
+                    <Text size="2" color="gray">
+                      The Electron shell can now run an authenticated voice self-test that derives fresh
+                      session keys and encrypts a UDP voice round trip end-to-end.
+                    </Text>
+                    <Flex direction="column" gap="2">
+                      <Flex gap="3" wrap="wrap">
+                        <Button
+                          variant="solid"
+                          onClick={() => {
+                            void runSelfTest();
+                          }}
+                          disabled={!window.app?.runSecureVoiceSelfTest || handshakeState === "running"}
+                        >
+                          {handshakeState === "running" ? "Running secure self-test…" : "Run auth self-test"}
+                        </Button>
+                        <Button variant="soft" disabled>
+                          {window.app?.runSecureVoiceSelfTest ? "Electron transport available" : "Open in Electron to test"}
+                        </Button>
+                      </Flex>
+                      {selfTestResult ? (
+                        <Card className="section-card">
+                          <Flex direction="column" gap="2">
+                            <Text size="2" color="gray">Session ID</Text>
+                            <Text size="2">{selfTestResult.sessionId}</Text>
+                            <Text size="2" color="gray">Echoed payload</Text>
+                            <Text size="2">{selfTestResult.echoedPayload}</Text>
+                            <Text size="2" color="gray">{selfTestResult.cipherSuite}</Text>
+                          </Flex>
+                        </Card>
+                      ) : null}
+                      {selfTestError ? (
+                        <Text size="2" color="ruby">{selfTestError}</Text>
+                      ) : null}
+                    </Flex>
                   </Flex>
-                </Flex>
-              </Card>
+                </Card>
             </Grid>
           </Flex>
         </main>

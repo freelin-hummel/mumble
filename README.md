@@ -22,6 +22,15 @@ npm run dev
 npm run build
 ```
 
+### Test
+
+```bash
+npm test
+```
+
+The Electron shell exposes a secure voice self-test that performs an authenticated
+handshake, derives fresh session keys, and validates encrypted UDP voice transport.
+
 ## Repo layout
 
 - electron/ - Electron main and preload processes
