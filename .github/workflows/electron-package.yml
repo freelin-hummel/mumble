@@ -1,0 +1,79 @@
+name: Electron package
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/electron-package.yml"
+      - "electron/**"
+      - "electron-builder.config.mjs"
+      - "index.html"
+      - "package.json"
+      - "package-lock.json"
+      - "src/**"
+      - "tests/**"
+      - "tsconfig.json"
+      - "vite.config.ts"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/electron-package.yml"
+      - "electron/**"
+      - "electron-builder.config.mjs"
+      - "index.html"
+      - "package.json"
+      - "package-lock.json"
+      - "src/**"
+      - "tests/**"
+      - "tsconfig.json"
+      - "vite.config.ts"
+
+jobs:
+  package:
+    name: Package (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            script: package:linux
+          - os: macos-latest
+            script: package:mac
+          - os: windows-latest
+            script: package:win
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run packaging tests
+        run: npm test
+
+      - name: Build packaged artifacts
+        run: npm run ${{ matrix.script }}
+        env:
+          CSC_LINK: ${{ secrets.MUMBLE_MACOS_CERTIFICATE }}
+          CSC_KEY_PASSWORD: ${{ secrets.MUMBLE_MACOS_CERTIFICATE_PASSWORD }}
+          CSC_NAME: ${{ secrets.MUMBLE_MACOS_IDENTITY }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.MUMBLE_WINDOWS_CERTIFICATE_PASSWORD }}
+          WIN_CSC_LINK: ${{ secrets.MUMBLE_WINDOWS_CERTIFICATE }}
+          WIN_CSC_SUBJECT_NAME: ${{ secrets.MUMBLE_WINDOWS_CERTIFICATE_SUBJECT }}
+
+      - name: Upload packaged artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: electron-package-${{ matrix.os }}
+          path: release/**
+          if-no-files-found: error
