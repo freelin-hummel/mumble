@@ -22,6 +22,12 @@ npm run dev
 npm run build
 ```
 
+### Test
+
+```bash
+npm test
+```
+
 ## Packaging
 
 This project uses **electron-builder** for packaging because it fits the current Electron + Vite + React split with minimal extra setup and can emit native artifacts for macOS, Windows, and Linux from the same build output.
