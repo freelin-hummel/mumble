@@ -177,6 +177,7 @@ const createFallbackConnectedState = (
   channels: [],
   activeChannelId: null,
   participants: [],
+  messages: [],
   telemetry: {
     latencyMs: null,
     jitterMs: null,
@@ -845,8 +846,12 @@ export function App() {
       return;
     }
 
-    updateLocalAppState((currentState) => appendLocalChatMessageState(currentState, chatDraft));
-    setChatDraft("");
+    try {
+      updateLocalAppState((currentState) => appendLocalChatMessageState(currentState, chatDraft));
+      setChatDraft("");
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "Unable to send chat.");
+    }
   };
 
   const applyPreset = (settings: typeof audioPresets[number]["settings"]) => {
