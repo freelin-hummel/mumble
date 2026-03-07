@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { AppClientStore } from "../electron/appClientState.js";
+import {
+  AppClientStore,
+  PERSISTED_APP_CLIENT_STATE_VERSION,
+  migratePersistedAppClientState
+} from "../electron/appClientState.js";
 
 test("AppClientStore hydrates persisted desktop preferences", () => {
   const store = new AppClientStore({
@@ -115,4 +119,90 @@ test("AppClientStore normalizes invalid push-to-talk shortcuts back to the defau
 
   assert.equal(store.getState().preferences.pushToTalkShortcut, "Space");
   assert.equal(store.updatePreferences({ pushToTalkShortcut: "m" }).preferences.pushToTalkShortcut, "KeyM");
+});
+
+test("migratePersistedAppClientState upgrades legacy desktop settings snapshots without losing values", () => {
+  const migratedState = migratePersistedAppClientState({
+    serverAddress: "voice.example.test:64738",
+    nickname: "Scout",
+    recentServers: ["voice.example.test:64738", "backup.example.test"],
+    audio: {
+      inputDeviceId: "usb-mic",
+      outputDeviceId: "usb-headset",
+      captureEnabled: false,
+      selfMuted: true,
+      inputGain: 121.2,
+      outputGain: 80
+    },
+    preferences: {
+      pushToTalk: true,
+      pushToTalkShortcut: "v",
+      autoReconnect: false,
+      notificationsEnabled: false,
+      showLatencyDetails: true
+    }
+  });
+
+  assert.deepEqual(migratedState, {
+    schemaVersion: PERSISTED_APP_CLIENT_STATE_VERSION,
+    serverAddress: "voice.example.test:64738",
+    nickname: "Scout",
+    recentServers: ["voice.example.test:64738", "backup.example.test"],
+    audio: {
+      inputDeviceId: "usb-mic",
+      outputDeviceId: "usb-headset",
+      captureEnabled: false,
+      selfMuted: true,
+      inputGain: 121,
+      outputGain: 80
+    },
+    preferences: {
+      pushToTalk: true,
+      pushToTalkShortcut: "KeyV",
+      autoReconnect: false,
+      notificationsEnabled: false,
+      showLatencyDetails: true
+    }
+  });
+});
+
+test("AppClientStore persists versioned settings snapshots", () => {
+  const persistedStates: unknown[] = [];
+  const store = new AppClientStore({
+    onPersist: (state) => {
+      persistedStates.push(state);
+    },
+    waitForConnection: async () => {}
+  });
+
+  store.updateAudioSettings({
+    inputDeviceId: "usb-mic",
+    outputGain: 109.9
+  });
+  store.updatePreferences({
+    pushToTalk: true,
+    pushToTalkShortcut: "KeyV"
+  });
+
+  assert.deepEqual(persistedStates.at(-1), {
+    schemaVersion: PERSISTED_APP_CLIENT_STATE_VERSION,
+    serverAddress: "",
+    nickname: "",
+    recentServers: [],
+    audio: {
+      inputDeviceId: "usb-mic",
+      outputDeviceId: "default",
+      captureEnabled: true,
+      selfMuted: false,
+      inputGain: 100,
+      outputGain: 110
+    },
+    preferences: {
+      pushToTalk: true,
+      pushToTalkShortcut: "KeyV",
+      autoReconnect: true,
+      notificationsEnabled: true,
+      showLatencyDetails: false
+    }
+  });
 });

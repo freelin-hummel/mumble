@@ -1,13 +1,17 @@
 import { app, BrowserWindow, ipcMain } from "electron";
-import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import {
   AppClientStore,
   type AppClientAudioSettings,
   type AppClientConnectRequest,
   type AppClientPreferences,
+  type PersistedAppClientState,
   type AppClientState
 } from "./appClientState.js";
+import {
+  loadPersistedAppClientState,
+  savePersistedAppClientState
+} from "./appStateStorage.js";
 
 const APP_STATE_CHANNEL = "app:state-changed";
 const APP_STATE_FILE_NAME = "desktop-client-state.json";
@@ -22,20 +26,10 @@ const broadcastState = (state: AppClientState) => {
 
 const getPersistedStatePath = () => path.join(app.getPath("userData"), APP_STATE_FILE_NAME);
 
-const loadPersistedState = () => {
-  try {
-    return JSON.parse(readFileSync(getPersistedStatePath(), "utf8"));
-  } catch {
-    return null;
-  }
-};
+const loadPersistedState = () => loadPersistedAppClientState(getPersistedStatePath());
 
-const savePersistedState = (state: object) => {
-  try {
-    writeFileSync(getPersistedStatePath(), JSON.stringify(state, null, 2), "utf8");
-  } catch {
-    return;
-  }
+const savePersistedState = (state: PersistedAppClientState) => {
+  savePersistedAppClientState(getPersistedStatePath(), state);
 };
 
 const getStore = () => {
