@@ -560,27 +560,6 @@ export function App() {
                         status={appState.connection.status === "connected" ? "live" : appState.connection.status === "error" ? "muted" : "idle"}
                         label={statusCopy[appState.connection.status]}
                       />
-                      Desktop shell
-                    </Badge>
-                    <Heading size="8">Mumble desktop client</Heading>
-                    <Text size="3" color="gray">
-                      Electron and React are wired up, but connection state, channels, and audio behavior still need implementation.
-                    </Text>
-                    <Flex gap="3" wrap="wrap">
-                      <TextField.Root size="3" placeholder="Server address" style={{ minWidth: 240 }}>
-                        <TextField.Slot>
-                          <GlobeIcon />
-                        </TextField.Slot>
-                      </TextField.Root>
-                      <TextField.Root size="3" placeholder="Nickname" style={{ minWidth: 200 }}>
-                        <TextField.Slot>
-                          <ChatBubbleIcon />
-                        </TextField.Slot>
-                      </TextField.Root>
-                      <Button size="3" disabled>Connect</Button>
-                    </Flex>
-                    <Flex gap="3" align="center">
-                      <StatusChip status="idle" label="UI shell only" />
                       <StatusChip status="idle" label={`Running on ${platformLabel}`} />
                       <StatusChip
                         status={handshakeState === "success" ? "live" : handshakeState === "error" ? "muted" : "idle"}
@@ -605,7 +584,6 @@ export function App() {
                 </Box>
                 <Card className="section-card" style={{ minWidth: 300 }}>
                   <Flex direction="column" gap="3">
-                    <SectionHeader title="Audio devices" subtitle="Capture, routing, and gain" />
                     <SectionHeader title="Audio devices" subtitle="Hot-swap aware routing" />
                     <Flex align="center" justify="between" gap="3" wrap="wrap">
                       <Badge size="2" variant="outline">
@@ -805,21 +783,6 @@ export function App() {
                         : "Disconnected. Participant presence appears here once the session is live."}
                     </Text>
                   )}
-                  <SectionHeader title="Participants" subtitle="No active session" />
-                  <Flex direction="column" gap="3">
-                    <Box
-                      style={{
-                        borderRadius: 16,
-                        padding: 20,
-                        background: "rgba(255,255,255,0.04)",
-                        border: "1px dashed rgba(255,255,255,0.12)"
-                      }}
-                    >
-                      <Text size="2" color="gray">
-                        Connect to a server before rendering channels, participants, and speaking status.
-                      </Text>
-                    </Box>
-                  </Flex>
                 </Flex>
               </Card>
 
@@ -850,6 +813,7 @@ export function App() {
                     ))}
                   </Grid>
                   <Separator size="4" />
+                  <SectionHeader
                     title="DSP pipeline"
                     subtitle="Local voice processing controls"
                     action={<IconButton variant="ghost"><MixerHorizontalIcon /></IconButton>}
@@ -925,12 +889,6 @@ export function App() {
                         void cycleChannel();
                       }}
                     />
-                  <SectionHeader title="Quick actions" subtitle="Visible but not connected" />
-                  <Grid columns={{ initial: "1", sm: "2" }} gap="3">
-                    <QuickAction title="Mute" description="Needs capture state and push-to-talk wiring." icon={<SpeakerOffIcon />} />
-                    <QuickAction title="Output" description="Needs device enumeration and selection state." icon={<SpeakerLoudIcon />} />
-                    <QuickAction title="Latency" description="Needs realtime telemetry from audio and network layers." icon={<LightningBoltIcon />} />
-                    <QuickAction title="Rooms" description="Needs live channel state and navigation handlers." icon={<ChatBubbleIcon />} />
                   </Grid>
                   {appState.preferences.showLatencyDetails ? (
                     <Card className="section-card">

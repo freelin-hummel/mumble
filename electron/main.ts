@@ -28,7 +28,6 @@ const createWindow = () => {
   });
 
   const devServerUrl = process.env.VITE_DEV_SERVER_URL ?? process.env.ELECTRON_RENDERER_URL;
-  const devServerUrl = process.env.ELECTRON_RENDERER_URL;
   if (devServerUrl) {
     mainWindow.loadURL(devServerUrl);
     mainWindow.webContents.openDevTools({ mode: "detach" });
