@@ -131,7 +131,7 @@ test("migratePersistedAppClientState upgrades legacy desktop settings snapshots 
       outputDeviceId: "usb-headset",
       captureEnabled: false,
       selfMuted: true,
-      inputGain: 121.2,
+      inputGain: 121,
       outputGain: 80
     },
     preferences: {
@@ -177,7 +177,7 @@ test("AppClientStore persists versioned settings snapshots", () => {
 
   store.updateAudioSettings({
     inputDeviceId: "usb-mic",
-    outputGain: 109.9
+    outputGain: 110
   });
   store.updatePreferences({
     pushToTalk: true,
