@@ -4,6 +4,7 @@ import type {
   AppClientPreferences,
   AppClientState
 } from "./appClientState.js";
+import type { RendererDiagnosticsSnapshot } from "./diagnostics.js";
 import type {
   UdpVoiceTransportConnectOptions,
   UdpVoiceTransportPacket,
@@ -20,6 +21,7 @@ contextBridge.exposeInMainWorld("app", {
   selectChannel: (channelId: string) => ipcRenderer.invoke("app:select-channel", channelId),
   updateAudioSettings: (audio: Partial<AppClientAudioSettings>) => ipcRenderer.invoke("app:update-audio", audio),
   updatePreferences: (preferences: Partial<AppClientPreferences>) => ipcRenderer.invoke("app:update-preferences", preferences),
+  exportDiagnostics: (snapshot?: RendererDiagnosticsSnapshot) => ipcRenderer.invoke("app:export-diagnostics", snapshot),
   onStateChanged: (listener: (state: AppClientState) => void) => {
     const wrappedListener = (_event: Electron.IpcRendererEvent, state: AppClientState) => {
       listener(state);

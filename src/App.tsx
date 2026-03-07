@@ -15,6 +15,7 @@ import {
 } from "@radix-ui/themes";
 import {
   ChatBubbleIcon,
+  DownloadIcon,
   GlobeIcon,
   LightningBoltIcon,
   MixerHorizontalIcon,
@@ -196,6 +197,9 @@ export function App() {
   const [serverAddress, setServerAddress] = useState("");
   const [nickname, setNickname] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
+  const [diagnosticsMessage, setDiagnosticsMessage] = useState<string | null>(null);
+  const [diagnosticsError, setDiagnosticsError] = useState<string | null>(null);
+  const [isExportingDiagnostics, setIsExportingDiagnostics] = useState(false);
   const [dspPipeline, setDspPipelineState] = useState(() => loadDspPipeline());
   const [voiceActivation, setVoiceActivation] = useState(() => createInitialVoiceActivationState());
   const [meteringError, setMeteringError] = useState<string | null>(null);
@@ -758,6 +762,42 @@ export function App() {
     }
   };
 
+  const exportDiagnostics = async () => {
+    if (!window.app?.exportDiagnostics || isExportingDiagnostics) {
+      return;
+    }
+
+    setDiagnosticsError(null);
+    setDiagnosticsMessage(null);
+    setIsExportingDiagnostics(true);
+
+    try {
+      const result = await window.app.exportDiagnostics({
+        audioRuntime: {
+          inputLevel: Number(voiceActivation.inputLevel.toFixed(4)),
+          outputLevel: Number(voiceActivation.outputLevel.toFixed(4)),
+          mode: voiceActivation.mode,
+          isTransmitting: voiceActivation.isTransmitting,
+          meteringError,
+          availableInputDevices: audioDevices.input.length,
+          availableOutputDevices: audioDevices.output.length,
+          outputRoutingReady
+        }
+      });
+
+      if (result.canceled) {
+        setDiagnosticsMessage("Diagnostics export cancelled.");
+        return;
+      }
+
+      setDiagnosticsMessage(`Diagnostics saved to ${result.filePath}.`);
+    } catch (error) {
+      setDiagnosticsError(error instanceof Error ? error.message : "Unable to export diagnostics.");
+    } finally {
+      setIsExportingDiagnostics(false);
+    }
+  };
+
   const applyPreset = (settings: typeof audioPresets[number]["settings"]) => {
     persistDspSettings(settings);
     setDspPipelineState(createDspPipeline(settings));
@@ -1232,10 +1272,31 @@ export function App() {
                   </Grid>
                   {appState.preferences.showLatencyDetails ? (
                     <Card className="section-card">
-                      <Flex direction="column" gap="2">
+                      <Flex direction="column" gap="3">
                         <Text size="2">Latency: {appState.telemetry.latencyMs ?? "—"} ms</Text>
                         <Text size="2">Jitter: {appState.telemetry.jitterMs ?? "—"} ms</Text>
                         <Text size="2">Packet loss: {appState.telemetry.packetLoss ?? "—"}%</Text>
+                        <Flex gap="3" wrap="wrap" align="center">
+                          <Button
+                            variant="soft"
+                            onClick={() => {
+                              void exportDiagnostics();
+                            }}
+                            disabled={!window.app?.exportDiagnostics || isExportingDiagnostics}
+                          >
+                            <DownloadIcon />
+                            {isExportingDiagnostics ? "Exporting…" : "Export diagnostics"}
+                          </Button>
+                          <Text size="1" color="gray">
+                            Includes structured logs plus network and audio diagnostics for bug reports.
+                          </Text>
+                        </Flex>
+                        {diagnosticsMessage ? (
+                          <Text size="1" color="green">{diagnosticsMessage}</Text>
+                        ) : null}
+                        {diagnosticsError ? (
+                          <Text size="1" color="ruby">{diagnosticsError}</Text>
+                        ) : null}
                       </Flex>
                     </Card>
                   ) : null}
