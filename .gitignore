@@ -54,3 +54,14 @@ CLAUDE.md
 clients/web-client/node_modules/
 clients/web-client/dist/
 clients/web-client/release/
+
+# Electron/Vite
+node_modules/
+dist/
+dist-electron/
+.env
+.env.*
+.vite/
+npm-debug.log*
+pnpm-debug.log*
+yarn-error.log*

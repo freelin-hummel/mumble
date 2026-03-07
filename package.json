@@ -1,0 +1,32 @@
+{
+  "name": "mumble-electron",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Electron-based Mumble client (web/desktop).",
+  "type": "module",
+  "main": "dist/electron/main.js",
+  "scripts": {
+    "dev": "concurrently -k \"vite\" \"VITE_DEV_SERVER_URL=http://localhost:5173 tsx electron/main.ts\"",
+    "build:renderer": "vite build",
+    "build:main": "tsc -p electron/tsconfig.json",
+    "build": "npm run build:renderer && npm run build:main",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@radix-ui/react-icons": "^1.3.0",
+    "@radix-ui/themes": "^3.1.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/react": "^18.3.11",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.0.1",
+    "electron": "^31.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.4",
+    "vite": "^5.4.1"
+  }
+}
