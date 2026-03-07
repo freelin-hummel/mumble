@@ -112,7 +112,13 @@ const createParticipants = (nickname: string): AppClientParticipant[] => ([
   { id: "rhea", name: "Rhea", channelId: "afk", status: "idle" }
 ]);
 
-const cloneState = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+const cloneState = <T>(value: T): T => {
+  if (typeof structuredClone === "function") {
+    return structuredClone(value);
+  }
+
+  return JSON.parse(JSON.stringify(value)) as T;
+};
 
 const clampGain = (value: number) => Math.min(150, Math.max(0, Math.round(value)));
 
@@ -193,6 +199,37 @@ const createDisconnectedState = (persistedState?: Partial<PersistedAppClientStat
   recentServers: normalizeRecentServers(persistedState?.recentServers)
 });
 
+const getPortValue = (serverAddress: string) => {
+  if (serverAddress.startsWith("[")) {
+    const ipv6Match = /^\[(?<host>[^\]]+)\](?::(?<port>[^:]+))?$/.exec(serverAddress);
+    if (!ipv6Match?.groups?.host) {
+      throw new Error("IPv6 server addresses must use bracket notation.");
+    }
+
+    return ipv6Match.groups.port ?? null;
+  }
+
+  if (serverAddress.includes("[") || serverAddress.includes("]")) {
+    throw new Error("IPv6 server addresses must use bracket notation.");
+  }
+
+  const separatorCount = serverAddress.split(":").length - 1;
+  if (separatorCount === 1) {
+    const [hostValue, portValue] = serverAddress.split(":");
+    if (!hostValue?.trim()) {
+      throw new Error("Enter a valid server address to join voice.");
+    }
+
+    return portValue ?? null;
+  }
+
+  if (!serverAddress.trim()) {
+    throw new Error("Enter a valid server address to join voice.");
+  }
+
+  return null;
+};
+
 const assertConnectRequest = ({ serverAddress, nickname }: AppClientConnectRequest) => {
   const normalizedServerAddress = serverAddress.trim();
   const normalizedNickname = nickname.trim();
@@ -205,14 +242,15 @@ const assertConnectRequest = ({ serverAddress, nickname }: AppClientConnectReque
     throw new Error("Enter a nickname before joining.");
   }
 
-  const portSeparatorIndex = normalizedServerAddress.lastIndexOf(":");
-  if (portSeparatorIndex > 0) {
-    const portValue = normalizedServerAddress.slice(portSeparatorIndex + 1);
-    if (portValue.length > 0) {
-      const port = Number(portValue);
-      if (!Number.isInteger(port) || port < 1 || port > 65535) {
-        throw new Error("Server ports must be between 1 and 65535.");
-      }
+  const portValue = getPortValue(normalizedServerAddress);
+  if (portValue !== null) {
+    if (portValue.length === 0) {
+      throw new Error("Server ports must be between 1 and 65535.");
+    }
+
+    const port = Number(portValue);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      throw new Error("Server ports must be between 1 and 65535.");
     }
   }
 

@@ -491,7 +491,7 @@ export function App() {
     }
 
     const currentIndex = appState.channels.findIndex((channel) => channel.id === appState.activeChannelId);
-    const nextChannel = appState.channels[(currentIndex + 1) % appState.channels.length] ?? appState.channels[0];
+    const nextChannel = appState.channels[(currentIndex + 1) % appState.channels.length];
     if (nextChannel) {
       await selectChannel(nextChannel.id);
     }
@@ -513,7 +513,7 @@ export function App() {
                 <Box style={{ flex: 1 }}>
                   <Flex direction="column" gap="3">
                     <Badge size="2" variant="solid" className="pulse">
-                      Desktop session shell
+                      desktop session shell
                     </Badge>
                     <Heading size="8">Mumble, reimagined for desktop and web</Heading>
                     <Text size="3" color="gray">

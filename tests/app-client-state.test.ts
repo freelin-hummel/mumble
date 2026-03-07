@@ -77,3 +77,17 @@ test("AppClientStore rejects invalid connection input and preserves error state"
   assert.equal(store.getState().connection.status, "error");
   assert.match(store.getState().connection.error ?? "", /between 1 and 65535/);
 });
+
+test("AppClientStore accepts IPv6 hosts without mistaking them for an invalid port", async () => {
+  const store = new AppClientStore({
+    waitForConnection: async () => {}
+  });
+
+  await store.connect({
+    serverAddress: "2001:db8::1",
+    nickname: "Scout"
+  });
+
+  assert.equal(store.getState().connection.status, "connected");
+  assert.equal(store.getState().connection.serverAddress, "2001:db8::1");
+});
