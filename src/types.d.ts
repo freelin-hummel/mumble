@@ -79,6 +79,24 @@ declare global {
     recentServers: string[];
   }
 
+  interface RendererDiagnosticsSnapshot {
+    audioRuntime?: {
+      inputLevel: number;
+      outputLevel: number;
+      mode: string;
+      isTransmitting: boolean;
+      meteringError: string | null;
+      availableInputDevices: number;
+      availableOutputDevices: number;
+      outputRoutingReady: boolean;
+    };
+  }
+
+  interface DiagnosticsExportResult {
+    canceled: boolean;
+    filePath: string | null;
+  }
+
   interface Window {
     app?: {
       versions: NodeJS.ProcessVersions;
@@ -90,6 +108,7 @@ declare global {
       selectChannel?: (channelId: string) => Promise<AppClientState>;
       updateAudioSettings?: (audio: Partial<AppClientAudioSettings>) => Promise<AppClientState>;
       updatePreferences?: (preferences: Partial<AppClientPreferences>) => Promise<AppClientState>;
+      exportDiagnostics?: (snapshot?: RendererDiagnosticsSnapshot) => Promise<DiagnosticsExportResult>;
       onStateChanged?: (listener: (state: AppClientState) => void) => () => void;
     };
     voice?: {

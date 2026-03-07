@@ -4,6 +4,7 @@ import type {
   AppClientPreferences,
   AppClientState
 } from "./appClientState.js";
+import type { RendererDiagnosticsSnapshot } from "./diagnostics.js";
 import type {
   UdpVoiceTransportConnectOptions,
   UdpVoiceTransportPacket,
@@ -20,6 +21,7 @@ export const APP_API_WHITELIST = Object.freeze([
   "selectChannel",
   "updateAudioSettings",
   "updatePreferences",
+  "exportDiagnostics",
   "onStateChanged"
 ] as const);
 
@@ -39,7 +41,8 @@ export const APP_INVOKE_CHANNELS = Object.freeze({
   disconnect: "app:disconnect",
   selectChannel: "app:select-channel",
   updateAudioSettings: "app:update-audio",
-  updatePreferences: "app:update-preferences"
+  updatePreferences: "app:update-preferences",
+  exportDiagnostics: "app:export-diagnostics"
 } as const);
 
 export const APP_EVENT_CHANNELS = Object.freeze({
@@ -100,6 +103,10 @@ export type PreloadAppApi = Readonly<{
   selectChannel: (channelId: string) => Promise<AppClientState>;
   updateAudioSettings: (audio: Partial<AppClientAudioSettings>) => Promise<AppClientState>;
   updatePreferences: (preferences: Partial<AppClientPreferences>) => Promise<AppClientState>;
+  exportDiagnostics: (snapshot?: RendererDiagnosticsSnapshot) => Promise<{
+    canceled: boolean;
+    filePath: string | null;
+  }>;
   onStateChanged: (listener: (state: AppClientState) => void) => () => void;
 }>;
 
@@ -197,6 +204,7 @@ export const createPreloadApi = (
     selectChannel: (channelId) => invoke(ipcRenderer, APP_INVOKE_CHANNELS.selectChannel, channelId),
     updateAudioSettings: (audio) => invoke(ipcRenderer, APP_INVOKE_CHANNELS.updateAudioSettings, audio),
     updatePreferences: (preferences) => invoke(ipcRenderer, APP_INVOKE_CHANNELS.updatePreferences, preferences),
+    exportDiagnostics: (snapshot) => invoke(ipcRenderer, APP_INVOKE_CHANNELS.exportDiagnostics, snapshot),
     onStateChanged: (listener) => subscribe(ipcRenderer, APP_EVENT_CHANNELS.onStateChanged, listener)
   });
 

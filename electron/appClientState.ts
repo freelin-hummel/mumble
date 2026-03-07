@@ -43,6 +43,12 @@ export type AppClientTelemetry = {
   packetLoss: number | null;
 };
 
+export type AppClientLogEvent = {
+  level: "info" | "warn" | "error";
+  event: string;
+  context?: Record<string, unknown>;
+};
+
 export type AppClientConnectionState = {
   status: AppClientConnectionStatus;
   serverAddress: string;
@@ -77,6 +83,7 @@ type AppClientListener = (state: AppClientState) => void;
 type AppClientStoreOptions = {
   persistedState?: unknown | null;
   onPersist?: (state: PersistedAppClientState) => void;
+  onLog?: (event: AppClientLogEvent) => void;
   waitForConnection?: () => Promise<void>;
 };
 
@@ -285,11 +292,14 @@ export class AppClientStore {
   private state: AppClientState;
   private readonly listeners = new Set<AppClientListener>();
   private readonly onPersist?: (state: PersistedAppClientState) => void;
+  private readonly onLog?: (event: AppClientLogEvent) => void;
   private readonly waitForConnection: () => Promise<void>;
 
-  public constructor({ persistedState, onPersist, waitForConnection }: AppClientStoreOptions = {}) {
+<<<<<<< HEAD
+  public constructor({ persistedState, onPersist, onLog, waitForConnection }: AppClientStoreOptions = {}) {
     this.state = createDisconnectedState(migratePersistedAppClientState(persistedState));
     this.onPersist = onPersist;
+    this.onLog = onLog;
     this.waitForConnection = waitForConnection ?? (() => new Promise((resolve) => {
       setTimeout(resolve, 250);
     }));
@@ -310,6 +320,7 @@ export class AppClientStore {
   public async connect(request: AppClientConnectRequest) {
     try {
       const normalizedRequest = assertConnectRequest(request);
+      this.log("info", "connection.connect.requested", normalizedRequest);
       this.updateState((currentState) => ({
         ...currentState,
         connection: {
@@ -333,9 +344,17 @@ export class AppClientStore {
         participants: [],
         telemetry: cloneState(defaultTelemetry)
       }));
+      this.log("info", "connection.connect.succeeded", {
+        serverAddress: normalizedRequest.serverAddress
+      });
       return this.getState();
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to connect right now.";
+      this.log("error", "connection.connect.failed", {
+        serverAddress: request.serverAddress,
+        nickname: request.nickname,
+        error: message
+      });
       this.updateState((currentState) => ({
         ...currentState,
         connection: {
@@ -349,6 +368,9 @@ export class AppClientStore {
   }
 
   public disconnect() {
+    this.log("info", "connection.disconnect.requested", {
+      serverAddress: this.state.connection.serverAddress
+    });
     this.updateState((currentState) => ({
       ...currentState,
       connection: {
@@ -365,6 +387,8 @@ export class AppClientStore {
   }
 
   public selectChannel(channelId: string) {
+    const previousActiveChannelId = this.state.activeChannelId;
+    let nextActiveChannelId = previousActiveChannelId;
     this.updateState((currentState) => {
       if (currentState.connection.status !== "connected") {
         return currentState;
@@ -375,11 +399,18 @@ export class AppClientStore {
         return currentState;
       }
 
+      nextActiveChannelId = nextChannel.id;
+
       return {
         ...currentState,
         activeChannelId: nextChannel.id
       };
     });
+    if (nextActiveChannelId !== previousActiveChannelId) {
+      this.log("info", "channel.selected", {
+        channelId: nextActiveChannelId
+      });
+    }
     return this.getState();
   }
 
@@ -391,6 +422,7 @@ export class AppClientStore {
         ...audio
       })
     }));
+    this.log("info", "audio.settings.updated", cloneState(audio as Record<string, unknown>));
     return this.getState();
   }
 
@@ -402,6 +434,7 @@ export class AppClientStore {
         ...preferences
       })
     }));
+    this.log("info", "preferences.updated", cloneState(preferences as Record<string, unknown>));
     return this.getState();
   }
 
@@ -416,5 +449,13 @@ export class AppClientStore {
 
   private persistState() {
     this.onPersist?.(createPersistedAppClientState(this.state));
+  }
+
+  private log(level: AppClientLogEvent["level"], event: string, context?: Record<string, unknown>) {
+    this.onLog?.({
+      level,
+      event,
+      context
+    });
   }
 }

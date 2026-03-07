@@ -41,6 +41,8 @@ export const registerVoiceTransportIpc = () => {
   });
 };
 
+export const getVoiceTransportStatus = () => voiceTransport.getStatus();
+
 export const shutdownVoiceTransport = async () => {
   await voiceTransport.disconnect();
 };
