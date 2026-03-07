@@ -11,5 +11,5 @@
     "skipLibCheck": true,
     "types": ["node", "electron"]
   },
-  "include": ["main.ts", "preload.ts"]
+  "include": ["**/*.ts"]
 }

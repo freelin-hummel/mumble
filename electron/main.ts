@@ -1,6 +1,7 @@
 import { app, BrowserWindow } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { registerVoiceTransportIpc, shutdownVoiceTransport } from "./voiceTransportIpc.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -37,6 +38,7 @@ const createWindow = () => {
 };
 
 app.whenReady().then(() => {
+  registerVoiceTransportIpc();
   createWindow();
 
   app.on("activate", () => {
@@ -44,6 +46,10 @@ app.whenReady().then(() => {
       createWindow();
     }
   });
+});
+
+app.on("before-quit", () => {
+  void shutdownVoiceTransport();
 });
 
 app.on("window-all-closed", () => {

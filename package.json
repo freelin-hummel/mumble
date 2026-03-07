@@ -15,7 +15,7 @@
   "main": "dist/electron/main.js",
   "scripts": {
     "dev": "concurrently -k \"vite\" \"VITE_DEV_SERVER_URL=http://localhost:5173 tsx electron/main.ts\"",
-    "test": "node --test tests/*.test.mjs",
+    "test": "node --import tsx --test tests/*.test.mjs",
     "clean": "node --input-type=module -e \"import { rmSync } from 'node:fs'; rmSync('dist', { recursive: true, force: true });\"",
     "clean:release": "node --input-type=module -e \"import { rmSync } from 'node:fs'; rmSync('release', { recursive: true, force: true });\"",
     "build:renderer": "vite build",
