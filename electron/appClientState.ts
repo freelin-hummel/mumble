@@ -61,7 +61,10 @@ export type AppClientState = {
   recentServers: string[];
 };
 
-type PersistedAppClientState = {
+export const PERSISTED_APP_CLIENT_STATE_VERSION = 1;
+
+export type PersistedAppClientState = {
+  schemaVersion: typeof PERSISTED_APP_CLIENT_STATE_VERSION;
   serverAddress: string;
   nickname: string;
   recentServers: string[];
@@ -72,7 +75,7 @@ type PersistedAppClientState = {
 type AppClientListener = (state: AppClientState) => void;
 
 type AppClientStoreOptions = {
-  persistedState?: Partial<PersistedAppClientState> | null;
+  persistedState?: unknown | null;
   onPersist?: (state: PersistedAppClientState) => void;
   waitForConnection?: () => Promise<void>;
 };
@@ -114,6 +117,10 @@ const cloneState = <T>(value: T): T => {
 };
 
 const clampGain = (value: number) => Math.min(150, Math.max(0, Math.round(value)));
+
+const isRecord = (value: unknown): value is Record<string, unknown> => (
+  typeof value === "object" && value !== null
+);
 
 const normalizeAudioSettings = (audio?: Partial<AppClientAudioSettings> | null): AppClientAudioSettings => ({
   inputDeviceId: typeof audio?.inputDeviceId === "string" && audio.inputDeviceId.length > 0
@@ -168,7 +175,36 @@ const buildRecentServers = (recentServers: string[], serverAddress: string) => {
   return [normalizedAddress, ...recentServers.filter((value) => value !== normalizedAddress)].slice(0, 5);
 };
 
-const createDisconnectedState = (persistedState?: Partial<PersistedAppClientState> | null): AppClientState => ({
+export const migratePersistedAppClientState = (persistedState?: unknown | null): PersistedAppClientState | null => {
+  if (!isRecord(persistedState)) {
+    return null;
+  }
+
+  const schemaVersion = persistedState.schemaVersion;
+  if (schemaVersion !== undefined && schemaVersion !== PERSISTED_APP_CLIENT_STATE_VERSION) {
+    return null;
+  }
+
+  return {
+    schemaVersion: PERSISTED_APP_CLIENT_STATE_VERSION,
+    serverAddress: typeof persistedState.serverAddress === "string" ? persistedState.serverAddress : "",
+    nickname: typeof persistedState.nickname === "string" ? persistedState.nickname : "",
+    recentServers: normalizeRecentServers(persistedState.recentServers as string[] | null | undefined),
+    audio: normalizeAudioSettings(isRecord(persistedState.audio) ? persistedState.audio : null),
+    preferences: normalizePreferences(isRecord(persistedState.preferences) ? persistedState.preferences : null)
+  };
+};
+
+export const createPersistedAppClientState = (state: AppClientState): PersistedAppClientState => ({
+  schemaVersion: PERSISTED_APP_CLIENT_STATE_VERSION,
+  serverAddress: state.connection.serverAddress,
+  nickname: state.connection.nickname,
+  recentServers: [...state.recentServers],
+  audio: cloneState(state.audio),
+  preferences: cloneState(state.preferences)
+});
+
+const createDisconnectedState = (persistedState?: PersistedAppClientState | null): AppClientState => ({
   connection: {
     status: "disconnected",
     serverAddress: typeof persistedState?.serverAddress === "string" ? persistedState.serverAddress : "",
@@ -252,7 +288,7 @@ export class AppClientStore {
   private readonly waitForConnection: () => Promise<void>;
 
   public constructor({ persistedState, onPersist, waitForConnection }: AppClientStoreOptions = {}) {
-    this.state = createDisconnectedState(persistedState);
+    this.state = createDisconnectedState(migratePersistedAppClientState(persistedState));
     this.onPersist = onPersist;
     this.waitForConnection = waitForConnection ?? (() => new Promise((resolve) => {
       setTimeout(resolve, 250);
@@ -379,12 +415,6 @@ export class AppClientStore {
   }
 
   private persistState() {
-    this.onPersist?.({
-      serverAddress: this.state.connection.serverAddress,
-      nickname: this.state.connection.nickname,
-      recentServers: [...this.state.recentServers],
-      audio: cloneState(this.state.audio),
-      preferences: cloneState(this.state.preferences)
-    });
+    this.onPersist?.(createPersistedAppClientState(this.state));
   }
 }
