@@ -113,8 +113,8 @@ export type PreloadVoiceApi = Readonly<{
 }>;
 
 export type CspViolationPayload = Readonly<{
-  blockedUri: string;
-  documentUri: string;
+  blockedURI: string;
+  documentURI: string;
   effectiveDirective: string;
   originalPolicy: string;
   violatedDirective: string;
@@ -224,8 +224,8 @@ const getString = (value: unknown, fallback: string) => {
 };
 
 export const toCspViolationPayload = (event: CspViolationEventLike): CspViolationPayload => ({
-  blockedUri: getString(event.blockedURI, "inline"),
-  documentUri: getString(event.documentURI, "unknown"),
+  blockedURI: getString(event.blockedURI, "inline"),
+  documentURI: getString(event.documentURI, "unknown"),
   effectiveDirective: getString(event.effectiveDirective, "unknown"),
   originalPolicy: getString(event.originalPolicy, CONTENT_SECURITY_POLICY),
   violatedDirective: getString(event.violatedDirective, "unknown")
@@ -241,5 +241,5 @@ export const registerCspViolationLogging = (
 };
 
 export const formatCspViolation = (payload: CspViolationPayload) => (
-  `[csp] Blocked "${payload.effectiveDirective}" on ${payload.documentUri}; source=${payload.blockedUri}; violated="${payload.violatedDirective}"`
+  `[csp] Blocked "${payload.effectiveDirective}" on ${payload.documentURI}; source=${payload.blockedURI}; violated="${payload.violatedDirective}"`
 );

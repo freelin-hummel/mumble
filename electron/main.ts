@@ -15,6 +15,10 @@ let mainWindow: BrowserWindow | null = null;
 let isShuttingDown = false;
 let isContentSecurityPolicyInstalled = false;
 
+const handleCspViolation = (_event: Electron.IpcMainEvent, payload: Parameters<typeof formatCspViolation>[0]) => {
+  console.warn(formatCspViolation(payload));
+};
+
 const installContentSecurityPolicy = (window: BrowserWindow) => {
   if (isContentSecurityPolicyInstalled) {
     return;
@@ -68,10 +72,7 @@ const createWindow = () => {
 
 app.whenReady().then(() => {
   ipcMain.handle("voice:run-self-test", () => runSecureVoiceSelfTest());
-  ipcMain.removeAllListeners(CSP_VIOLATION_CHANNEL);
-  ipcMain.on(CSP_VIOLATION_CHANNEL, (_event, payload) => {
-    console.warn(formatCspViolation(payload));
-  });
+  ipcMain.on(CSP_VIOLATION_CHANNEL, handleCspViolation);
   registerAppStateIpc();
   registerVoiceTransportIpc();
   createWindow();
