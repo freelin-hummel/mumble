@@ -42,6 +42,26 @@ main {
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+.device-field {
+  display: grid;
+  gap: 6px;
+}
+
+.device-select {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(9, 11, 16, 0.85);
+  color: var(--app-text);
+  font: inherit;
+}
+
+.device-select:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
 .pulse {
   position: relative;
 }
