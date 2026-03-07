@@ -6,10 +6,23 @@ import {
 export type AppClientConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
 export type AppClientParticipantStatus = "live" | "muted" | "idle";
 
+export type AppClientChannelPermissions = {
+  traverse: boolean;
+  enter: boolean;
+  speak: boolean;
+  muteDeafen: boolean;
+  move: boolean;
+  write: boolean;
+};
+
 export type AppClientChannel = {
   id: string;
   name: string;
   parentId: string | null;
+  depth: number;
+  position: number;
+  permissions: AppClientChannelPermissions;
+  participantIds: string[];
 };
 
 export type AppClientParticipant = {
@@ -92,6 +105,44 @@ export type AppClientConnectRequest = {
   nickname: string;
 };
 
+export type AppClientChannelSnapshot = {
+  id: string;
+  name: string;
+  parentId?: string | null;
+  position?: number;
+  permissions?: Partial<AppClientChannelPermissions>;
+};
+
+export type AppClientChannelPatch = {
+  id: string;
+  name?: string;
+  parentId?: string | null;
+  position?: number;
+  permissions?: Partial<AppClientChannelPermissions>;
+};
+
+export type AppClientParticipantSnapshot = {
+  id: string;
+  name: string;
+  channelId: string;
+  status?: AppClientParticipantStatus;
+  isSelf?: boolean;
+};
+
+export type AppClientParticipantPatch = {
+  id: string;
+  name?: string;
+  channelId?: string;
+  status?: AppClientParticipantStatus;
+  isSelf?: boolean;
+};
+
+export type AppClientSessionSnapshot = {
+  channels: AppClientChannelSnapshot[];
+  participants: AppClientParticipantSnapshot[];
+  activeChannelId?: string | null;
+};
+
 const defaultAudioSettings = Object.freeze<AppClientAudioSettings>({
   inputDeviceId: "default",
   outputDeviceId: "default",
@@ -115,6 +166,15 @@ const defaultTelemetry = Object.freeze<AppClientTelemetry>({
   packetLoss: null
 });
 
+const defaultChannelPermissions = Object.freeze<AppClientChannelPermissions>({
+  traverse: true,
+  enter: true,
+  speak: true,
+  muteDeafen: false,
+  move: false,
+  write: false
+});
+
 const cloneState = <T>(value: T): T => {
   if (typeof structuredClone === "function") {
     return structuredClone(value);
@@ -124,6 +184,235 @@ const cloneState = <T>(value: T): T => {
 };
 
 const clampGain = (value: number) => Math.min(150, Math.max(0, Math.round(value)));
+const compareText = (left: string, right: string) => left.localeCompare(right, undefined, {
+  numeric: true,
+  sensitivity: "base"
+});
+const isParticipantStatus = (value: string): value is AppClientParticipantStatus => (
+  value === "live" || value === "muted" || value === "idle"
+);
+const normalizeId = (value: string | null | undefined) => {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalizedValue = value.trim();
+  return normalizedValue.length > 0 ? normalizedValue : null;
+};
+const normalizeChannelPermissions = (
+  permissions?: Partial<AppClientChannelPermissions> | null,
+  fallback: AppClientChannelPermissions = defaultChannelPermissions
+): AppClientChannelPermissions => ({
+  traverse: typeof permissions?.traverse === "boolean" ? permissions.traverse : fallback.traverse,
+  enter: typeof permissions?.enter === "boolean" ? permissions.enter : fallback.enter,
+  speak: typeof permissions?.speak === "boolean" ? permissions.speak : fallback.speak,
+  muteDeafen: typeof permissions?.muteDeafen === "boolean" ? permissions.muteDeafen : fallback.muteDeafen,
+  move: typeof permissions?.move === "boolean" ? permissions.move : fallback.move,
+  write: typeof permissions?.write === "boolean" ? permissions.write : fallback.write
+});
+const resolveChannelPermissionsFallback = (channel?: AppClientChannelSnapshot | null) => (
+  channel?.permissions ?? defaultChannelPermissions
+);
+
+const resolveActiveChannelId = (
+  channels: AppClientChannel[],
+  participants: AppClientParticipant[],
+  requestedActiveChannelId: string | null | undefined,
+  currentActiveChannelId: string | null
+) => {
+  const channelLookup = new Map(channels.map((channel) => [channel.id, channel]));
+  const candidates = [
+    normalizeId(requestedActiveChannelId),
+    normalizeId(currentActiveChannelId),
+    participants.find((participant) => participant.isSelf)?.channelId ?? null,
+    channels.find((channel) => channel.permissions.enter)?.id ?? null,
+    channels[0]?.id ?? null
+  ];
+
+  for (const candidate of candidates) {
+    if (!candidate) {
+      continue;
+    }
+
+    const channel = channelLookup.get(candidate);
+    if (channel?.permissions.enter) {
+      return candidate;
+    }
+  }
+
+  return null;
+};
+
+// Build a stable, depth-annotated channel list ordered by position/name/id while
+// recovering gracefully from invalid parent links or cycles by re-rooting leftovers.
+const sortChannelsIntoTree = (channels: AppClientChannel[]) => {
+  const childLookup = new Map<string | null, AppClientChannel[]>();
+  const compareChannels = (left: AppClientChannel, right: AppClientChannel) => (
+    left.position - right.position
+      || compareText(left.name, right.name)
+      || compareText(left.id, right.id)
+  );
+  const visit = (
+    parentId: string | null,
+    depth: number,
+    orderedChannels: AppClientChannel[],
+    visitedChannels: Set<string>
+  ) => {
+    const children = [...(childLookup.get(parentId) ?? [])].sort(compareChannels);
+    for (const child of children) {
+      if (visitedChannels.has(child.id)) {
+        continue;
+      }
+
+      visitedChannels.add(child.id);
+      orderedChannels.push({
+        ...child,
+        depth
+      });
+      visit(child.id, depth + 1, orderedChannels, visitedChannels);
+    }
+  };
+
+  for (const channel of channels) {
+    const siblings = childLookup.get(channel.parentId);
+    if (siblings) {
+      siblings.push(channel);
+      continue;
+    }
+
+    childLookup.set(channel.parentId, [channel]);
+  }
+
+  const orderedChannels: AppClientChannel[] = [];
+  const visitedChannels = new Set<string>();
+  visit(null, 0, orderedChannels, visitedChannels);
+
+  for (const channel of [...channels].sort(compareChannels)) {
+    if (visitedChannels.has(channel.id)) {
+      continue;
+    }
+
+    orderedChannels.push({
+      ...channel,
+      parentId: null,
+      depth: 0
+    });
+    visit(channel.id, 1, orderedChannels, visitedChannels);
+  }
+
+  return orderedChannels;
+};
+
+// Normalize live session payloads into renderer-safe state by validating channel
+// references, ordering the tree, filtering participants in missing rooms, and
+// choosing the best active channel that the UI can still enter.
+const normalizeSessionState = (
+  channels: AppClientChannelSnapshot[],
+  participants: AppClientParticipantSnapshot[],
+  requestedActiveChannelId: string | null | undefined,
+  currentActiveChannelId: string | null
+) => {
+  const normalizedChannels: AppClientChannel[] = [];
+
+  for (const channel of channels) {
+    const id = normalizeId(channel.id);
+    const name = typeof channel.name === "string" ? channel.name.trim() : "";
+
+    if (!id || name.length === 0) {
+      continue;
+    }
+
+    normalizedChannels.push({
+      id,
+      name,
+      parentId: normalizeId(channel.parentId),
+      depth: 0,
+      position: typeof channel.position === "number" && Number.isFinite(channel.position)
+        ? Math.round(channel.position)
+        : 0,
+      permissions: normalizeChannelPermissions(channel.permissions),
+      participantIds: []
+    });
+  }
+
+  const channelLookup = new Map(normalizedChannels.map((channel) => [channel.id, channel]));
+  const sanitizedChannels = normalizedChannels.map((channel) => ({
+    ...channel,
+    parentId: channel.parentId && channel.parentId !== channel.id && channelLookup.has(channel.parentId)
+      ? channel.parentId
+      : null
+  }));
+  const orderedChannels = sortChannelsIntoTree(sanitizedChannels);
+  const orderedChannelIds = new Map(orderedChannels.map((channel, index) => [channel.id, index]));
+  const normalizedParticipants = participants
+    .map((participant) => {
+      const id = normalizeId(participant.id);
+      const name = typeof participant.name === "string" ? participant.name.trim() : "";
+      const channelId = normalizeId(participant.channelId);
+
+      if (!id || name.length === 0 || !channelId || !orderedChannelIds.has(channelId)) {
+        return null;
+      }
+
+      const nextStatus = participant.status ?? "idle";
+      return {
+        id,
+        name,
+        channelId,
+        status: isParticipantStatus(nextStatus) ? nextStatus : "idle",
+        isSelf: participant.isSelf === true ? true : undefined
+      } satisfies AppClientParticipant;
+    })
+    .filter((participant): participant is AppClientParticipant => participant !== null)
+    .sort((left, right) => (
+      (orderedChannelIds.get(left.channelId) ?? -1)
+        - (orderedChannelIds.get(right.channelId) ?? -1)
+      || Number(Boolean(right.isSelf)) - Number(Boolean(left.isSelf))
+      || compareText(left.name, right.name)
+      || compareText(left.id, right.id)
+    ));
+
+  const participantIdsByChannel = new Map<string, string[]>();
+  for (const participant of normalizedParticipants) {
+    const channelParticipantIds = participantIdsByChannel.get(participant.channelId);
+    if (channelParticipantIds) {
+      channelParticipantIds.push(participant.id);
+      continue;
+    }
+
+    participantIdsByChannel.set(participant.channelId, [participant.id]);
+  }
+
+  return {
+    channels: orderedChannels.map((channel) => ({
+      ...channel,
+      participantIds: participantIdsByChannel.get(channel.id) ?? []
+    })),
+    participants: normalizedParticipants,
+    activeChannelId: resolveActiveChannelId(
+      orderedChannels,
+      normalizedParticipants,
+      requestedActiveChannelId,
+      currentActiveChannelId
+    )
+  };
+};
+
+const toChannelSnapshot = (channel: AppClientChannel): AppClientChannelSnapshot => ({
+  id: channel.id,
+  name: channel.name,
+  parentId: channel.parentId,
+  position: channel.position,
+  permissions: cloneState(channel.permissions)
+});
+
+const toParticipantSnapshot = (participant: AppClientParticipant): AppClientParticipantSnapshot => ({
+  id: participant.id,
+  name: participant.name,
+  channelId: participant.channelId,
+  status: participant.status,
+  isSelf: participant.isSelf
+});
 
 const isRecord = (value: unknown): value is Record<string, unknown> => (
   typeof value === "object" && value !== null
@@ -295,7 +584,6 @@ export class AppClientStore {
   private readonly onLog?: (event: AppClientLogEvent) => void;
   private readonly waitForConnection: () => Promise<void>;
 
-<<<<<<< HEAD
   public constructor({ persistedState, onPersist, onLog, waitForConnection }: AppClientStoreOptions = {}) {
     this.state = createDisconnectedState(migratePersistedAppClientState(persistedState));
     this.onPersist = onPersist;
@@ -395,7 +683,7 @@ export class AppClientStore {
       }
 
       const nextChannel = currentState.channels.find((channel) => channel.id === channelId);
-      if (!nextChannel) {
+      if (!nextChannel || !nextChannel.permissions.enter) {
         return currentState;
       }
 
@@ -411,6 +699,186 @@ export class AppClientStore {
         channelId: nextActiveChannelId
       });
     }
+    return this.getState();
+  }
+
+  public syncSessionSnapshot(snapshot: AppClientSessionSnapshot) {
+    this.updateState((currentState) => {
+      const normalizedSessionState = normalizeSessionState(
+        snapshot.channels,
+        snapshot.participants,
+        snapshot.activeChannelId,
+        currentState.activeChannelId
+      );
+
+      return {
+        ...currentState,
+        channels: normalizedSessionState.channels,
+        participants: normalizedSessionState.participants,
+        activeChannelId: normalizedSessionState.activeChannelId
+      };
+    });
+    return this.getState();
+  }
+
+  public upsertChannel(channel: AppClientChannelPatch) {
+    this.updateState((currentState) => {
+      const normalizedChannelId = normalizeId(channel.id);
+      if (!normalizedChannelId) {
+        return currentState;
+      }
+
+      const nextChannels = new Map(currentState.channels.map((entry) => [entry.id, toChannelSnapshot(entry)]));
+      const currentChannel = nextChannels.get(normalizedChannelId);
+      nextChannels.set(normalizedChannelId, {
+        id: normalizedChannelId,
+        name: typeof channel.name === "string" ? channel.name : currentChannel?.name ?? normalizedChannelId,
+        parentId: channel.parentId !== undefined ? channel.parentId : currentChannel?.parentId ?? null,
+        position: channel.position ?? currentChannel?.position ?? 0,
+        permissions: normalizeChannelPermissions(channel.permissions, resolveChannelPermissionsFallback(currentChannel))
+      });
+
+      const normalizedSessionState = normalizeSessionState(
+        [...nextChannels.values()],
+        currentState.participants.map(toParticipantSnapshot),
+        currentState.activeChannelId,
+        currentState.activeChannelId
+      );
+
+      return {
+        ...currentState,
+        channels: normalizedSessionState.channels,
+        participants: normalizedSessionState.participants,
+        activeChannelId: normalizedSessionState.activeChannelId
+      };
+    });
+    return this.getState();
+  }
+
+  public removeChannel(channelId: string) {
+    this.updateState((currentState) => {
+      const normalizedChannelId = normalizeId(channelId);
+      if (!normalizedChannelId) {
+        return currentState;
+      }
+
+      const normalizedSessionState = normalizeSessionState(
+        currentState.channels
+          .filter((channel) => channel.id !== normalizedChannelId)
+          .map(toChannelSnapshot),
+        currentState.participants
+          .filter((participant) => participant.channelId !== normalizedChannelId)
+          .map(toParticipantSnapshot),
+        currentState.activeChannelId === normalizedChannelId ? null : currentState.activeChannelId,
+        currentState.activeChannelId
+      );
+
+      return {
+        ...currentState,
+        channels: normalizedSessionState.channels,
+        participants: normalizedSessionState.participants,
+        activeChannelId: normalizedSessionState.activeChannelId
+      };
+    });
+    return this.getState();
+  }
+
+  public upsertParticipant(participant: AppClientParticipantPatch) {
+    this.updateState((currentState) => {
+      const normalizedParticipantId = normalizeId(participant.id);
+      if (!normalizedParticipantId) {
+        return currentState;
+      }
+
+      const nextParticipants = new Map(currentState.participants.map((entry) => [entry.id, toParticipantSnapshot(entry)]));
+      const currentParticipant = nextParticipants.get(normalizedParticipantId);
+      const normalizedChannelId = normalizeId(participant.channelId ?? currentParticipant?.channelId);
+      if (!normalizedChannelId) {
+        return currentState;
+      }
+
+      const nextStatus = participant.status ?? currentParticipant?.status ?? "idle";
+      nextParticipants.set(normalizedParticipantId, {
+        id: normalizedParticipantId,
+        name: typeof participant.name === "string"
+          ? participant.name
+          : currentParticipant?.name ?? normalizedParticipantId,
+        channelId: normalizedChannelId,
+        status: isParticipantStatus(nextStatus) ? nextStatus : "idle",
+        isSelf: participant.isSelf ?? currentParticipant?.isSelf
+      });
+
+      const normalizedSessionState = normalizeSessionState(
+        currentState.channels.map(toChannelSnapshot),
+        [...nextParticipants.values()],
+        currentState.activeChannelId,
+        currentState.activeChannelId
+      );
+
+      return {
+        ...currentState,
+        channels: normalizedSessionState.channels,
+        participants: normalizedSessionState.participants,
+        activeChannelId: normalizedSessionState.activeChannelId
+      };
+    });
+    return this.getState();
+  }
+
+  public removeParticipant(participantId: string) {
+    this.updateState((currentState) => {
+      const normalizedParticipantId = normalizeId(participantId);
+      if (!normalizedParticipantId) {
+        return currentState;
+      }
+
+      const normalizedSessionState = normalizeSessionState(
+        currentState.channels.map(toChannelSnapshot),
+        currentState.participants
+          .filter((participant) => participant.id !== normalizedParticipantId)
+          .map(toParticipantSnapshot),
+        currentState.activeChannelId,
+        currentState.activeChannelId
+      );
+
+      return {
+        ...currentState,
+        channels: normalizedSessionState.channels,
+        participants: normalizedSessionState.participants,
+        activeChannelId: normalizedSessionState.activeChannelId
+      };
+    });
+    return this.getState();
+  }
+
+  public updateChannelPermissions(channelId: string, permissions: Partial<AppClientChannelPermissions>) {
+    this.updateState((currentState) => {
+      const normalizedChannelId = normalizeId(channelId);
+      if (!normalizedChannelId) {
+        return currentState;
+      }
+
+      const normalizedSessionState = normalizeSessionState(
+        currentState.channels.map((channel) => (
+          channel.id === normalizedChannelId
+            ? {
+              ...toChannelSnapshot(channel),
+              permissions: normalizeChannelPermissions(permissions, resolveChannelPermissionsFallback(channel))
+            }
+            : toChannelSnapshot(channel)
+        )),
+        currentState.participants.map(toParticipantSnapshot),
+        currentState.activeChannelId,
+        currentState.activeChannelId
+      );
+
+      return {
+        ...currentState,
+        channels: normalizedSessionState.channels,
+        participants: normalizedSessionState.participants,
+        activeChannelId: normalizedSessionState.activeChannelId
+      };
+    });
     return this.getState();
   }
 

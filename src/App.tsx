@@ -19,6 +19,7 @@ import {
   GlobeIcon,
   LightningBoltIcon,
   MixerHorizontalIcon,
+  PersonIcon,
   SpeakerLoudIcon,
   SpeakerOffIcon
 } from "@radix-ui/react-icons";
@@ -1091,12 +1092,14 @@ export function App() {
                 <Flex direction="column" gap="4">
                   <SectionHeader
                     title="Channels"
-                    subtitle={activeChannel ? `Active room: ${activeChannel.name}` : "Join a server to browse rooms"}
+                    subtitle={activeChannel
+                      ? `Active room: ${activeChannel.name}${!activeChannel.permissions.enter ? " · no entry" : ""}`
+                      : "Join a server to browse rooms"}
                   />
                   {appState.channels.length > 0 ? (
                     <Flex direction="column" gap="2">
                       {appState.channels.map((channel) => {
-                        const participantCount = appState.participants.filter((participant) => participant.channelId === channel.id).length;
+                        const participantCount = channel.participantIds.length;
                         const isActive = channel.id === appState.activeChannelId;
                         return (
                           <Button
@@ -1107,9 +1110,20 @@ export function App() {
                             onClick={() => {
                               void selectChannel(channel.id);
                             }}
+                            disabled={!channel.permissions.enter}
                           >
-                            <span>{channel.name}</span>
-                            <span>{participantCount}</span>
+                            <Flex align="center" justify="between" width="100%" gap="3">
+                              <Flex align="center" gap="2" style={{ paddingLeft: `${channel.depth}rem` }}>
+                                <span>{channel.name}</span>
+                                {!channel.permissions.enter ? (
+                                  <Text as="span" size="1" color="gray">Locked</Text>
+                                ) : null}
+                                {channel.permissions.enter && !channel.permissions.speak ? (
+                                  <Text as="span" size="1" color="gray">Listen only</Text>
+                                ) : null}
+                              </Flex>
+                              <span>{participantCount}</span>
+                            </Flex>
                           </Button>
                         );
                       })}

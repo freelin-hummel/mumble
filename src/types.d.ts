@@ -28,6 +28,17 @@ declare global {
     id: string;
     name: string;
     parentId: string | null;
+    depth: number;
+    position: number;
+    permissions: {
+      traverse: boolean;
+      enter: boolean;
+      speak: boolean;
+      muteDeafen: boolean;
+      move: boolean;
+      write: boolean;
+    };
+    participantIds: string[];
   }
 
   interface AppClientParticipant {
