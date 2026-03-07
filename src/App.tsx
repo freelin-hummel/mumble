@@ -25,6 +25,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   applyOutputDeviceSelection,
   buildAudioDeviceState,
+  createInputDeviceConstraints,
   subscribeToAudioDeviceChanges,
   SYSTEM_DEFAULT_DEVICE_ID,
   type BrowserAudioDevice
@@ -39,6 +40,15 @@ import {
   persistDspSettings,
   setDspFeature
 } from "./dspPipeline.mjs";
+import {
+  createInitialVoiceActivationState,
+  DEFAULT_PUSH_TO_TALK_SHORTCUT,
+  DEFAULT_VAD_START_THRESHOLD,
+  formatPushToTalkShortcut,
+  matchesPushToTalkShortcut,
+  shortcutFromKeyboardEvent,
+  stepVoiceActivation
+} from "./voiceActivation";
 
 const fallbackAppState: AppClientState = {
   connection: {
@@ -60,6 +70,7 @@ const fallbackAppState: AppClientState = {
   },
   preferences: {
     pushToTalk: false,
+    pushToTalkShortcut: DEFAULT_PUSH_TO_TALK_SHORTCUT,
     autoReconnect: true,
     notificationsEnabled: true,
     showLatencyDetails: false
@@ -136,6 +147,31 @@ const createFallbackConnectedState = (
   },
   recentServers: buildRecentServers(currentState.recentServers, serverAddress)
 });
+
+const getVoiceActivationLabel = (mode: ReturnType<typeof createInitialVoiceActivationState>["mode"]) => {
+  switch (mode) {
+    case "muted":
+      return "Mic muted";
+    case "ptt-live":
+      return "PTT live";
+    case "ptt-armed":
+      return "PTT armed";
+    case "vad-live":
+      return "VAD live";
+    case "vad-armed":
+    default:
+      return "VAD armed";
+  }
+};
+
+const isEditableTarget = (target: EventTarget | null) => (
+  target instanceof HTMLElement
+    && (target.isContentEditable
+      || target.tagName === "INPUT"
+      || target.tagName === "TEXTAREA"
+      || target.tagName === "SELECT")
+);
+
 export function App() {
   const [handshakeState, setHandshakeState] = useState<"idle" | "running" | "success" | "error">("idle");
   const [selfTestResult, setSelfTestResult] = useState<SecureVoiceSelfTestResult | null>(null);
@@ -158,7 +194,18 @@ export function App() {
   const [nickname, setNickname] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [dspPipeline, setDspPipelineState] = useState(() => loadDspPipeline());
+  const [voiceActivation, setVoiceActivation] = useState(() => createInitialVoiceActivationState());
+  const [meteringError, setMeteringError] = useState<string | null>(null);
+  const [pushToTalkPressed, setPushToTalkPressed] = useState(false);
   const outputPreviewRef = useRef<HTMLAudioElement>(null);
+  const pushToTalkPressedRef = useRef(false);
+  const audioSettingsRef = useRef({
+    captureEnabled: fallbackAppState.audio.captureEnabled,
+    selfMuted: fallbackAppState.audio.selfMuted,
+    inputGain: fallbackAppState.audio.inputGain,
+    outputGain: fallbackAppState.audio.outputGain,
+    pushToTalk: fallbackAppState.preferences.pushToTalk
+  });
   const audioDevices = useMemo(() => buildAudioDeviceState(
     enumeratedDevices,
     {
@@ -213,6 +260,26 @@ export function App() {
       }
     }));
   }, [updateLocalAppState]);
+
+  useEffect(() => {
+    audioSettingsRef.current = {
+      captureEnabled: appState.audio.captureEnabled,
+      selfMuted: appState.audio.selfMuted,
+      inputGain: appState.audio.inputGain,
+      outputGain: appState.audio.outputGain,
+      pushToTalk: appState.preferences.pushToTalk
+    };
+  }, [
+    appState.audio.captureEnabled,
+    appState.audio.inputGain,
+    appState.audio.outputGain,
+    appState.audio.selfMuted,
+    appState.preferences.pushToTalk
+  ]);
+
+  useEffect(() => {
+    pushToTalkPressedRef.current = pushToTalkPressed;
+  }, [pushToTalkPressed]);
 
   const refreshAudioDevices = useCallback(async () => {
     if (!mediaDevices?.enumerateDevices) {
@@ -284,6 +351,210 @@ export function App() {
       active = false;
     };
   }, [audioDevices.selectedOutputId]);
+
+  useEffect(() => {
+    if (!appState.preferences.pushToTalk) {
+      setPushToTalkPressed(false);
+      return undefined;
+    }
+
+    const shortcut = appState.preferences.pushToTalkShortcut || DEFAULT_PUSH_TO_TALK_SHORTCUT;
+    const releaseShortcut = () => {
+      setPushToTalkPressed(false);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (isEditableTarget(event.target)) {
+        return;
+      }
+
+      if (!matchesPushToTalkShortcut(shortcut, event)) {
+        return;
+      }
+
+      event.preventDefault();
+      setPushToTalkPressed(true);
+    };
+    const handleKeyUp = (event: KeyboardEvent) => {
+      if (!matchesPushToTalkShortcut(shortcut, event)) {
+        return;
+      }
+
+      event.preventDefault();
+      setPushToTalkPressed(false);
+    };
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        releaseShortcut();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    window.addEventListener("blur", releaseShortcut);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+      window.removeEventListener("blur", releaseShortcut);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [appState.preferences.pushToTalk, appState.preferences.pushToTalkShortcut]);
+
+  useEffect(() => {
+    setVoiceActivation((currentState) => stepVoiceActivation(currentState, {
+      inputLevel: currentState.inputLevel,
+      captureEnabled: appState.audio.captureEnabled,
+      selfMuted: appState.audio.selfMuted,
+      pushToTalk: appState.preferences.pushToTalk,
+      pushToTalkPressed,
+      inputGain: appState.audio.inputGain,
+      outputGain: appState.audio.outputGain
+    }));
+  }, [
+    appState.audio.captureEnabled,
+    appState.audio.inputGain,
+    appState.audio.outputGain,
+    appState.audio.selfMuted,
+    appState.preferences.pushToTalk,
+    pushToTalkPressed
+  ]);
+
+  useEffect(() => {
+    if (!mediaDevices || typeof mediaDevices.getUserMedia !== "function") {
+      setMeteringError("Microphone metering requires MediaDevices.getUserMedia.");
+      setVoiceActivation((currentState) => stepVoiceActivation(currentState, {
+        inputLevel: 0,
+        captureEnabled: appState.audio.captureEnabled,
+        selfMuted: appState.audio.selfMuted,
+        pushToTalk: appState.preferences.pushToTalk,
+        pushToTalkPressed: pushToTalkPressedRef.current,
+        inputGain: appState.audio.inputGain,
+        outputGain: appState.audio.outputGain
+      }));
+      return undefined;
+    }
+
+    if (!appState.audio.captureEnabled) {
+      setMeteringError(null);
+      setVoiceActivation((currentState) => stepVoiceActivation(currentState, {
+        inputLevel: 0,
+        captureEnabled: false,
+        selfMuted: appState.audio.selfMuted,
+        pushToTalk: appState.preferences.pushToTalk,
+        pushToTalkPressed: pushToTalkPressedRef.current,
+        inputGain: appState.audio.inputGain,
+        outputGain: appState.audio.outputGain
+      }));
+      return undefined;
+    }
+
+    const windowWithAudioContext = window as Window & {
+      webkitAudioContext?: typeof AudioContext;
+    };
+    const AudioContextCtor = windowWithAudioContext.AudioContext ?? windowWithAudioContext.webkitAudioContext;
+    if (!AudioContextCtor) {
+      setMeteringError("AudioContext is unavailable in this runtime.");
+      return undefined;
+    }
+
+    let cancelled = false;
+    let animationFrameId = 0;
+    let mediaStream: MediaStream | null = null;
+    let audioContext: AudioContext | null = null;
+
+    const stopMetering = () => {
+      if (animationFrameId) {
+        window.cancelAnimationFrame(animationFrameId);
+      }
+      mediaStream?.getTracks().forEach((track) => {
+        track.stop();
+      });
+      if (audioContext) {
+        void audioContext.close();
+      }
+    };
+
+    const startMetering = async () => {
+      try {
+        mediaStream = await mediaDevices.getUserMedia({
+          audio: createInputDeviceConstraints(audioDevices.selectedInputId),
+          video: false
+        });
+        if (cancelled) {
+          stopMetering();
+          return;
+        }
+
+        audioContext = new AudioContextCtor();
+        const analyser = audioContext.createAnalyser();
+        analyser.fftSize = 1024;
+        analyser.smoothingTimeConstant = 0.85;
+        audioContext.createMediaStreamSource(mediaStream).connect(analyser);
+        const samples = new Float32Array(analyser.fftSize);
+
+        setMeteringError(null);
+
+        const tick = () => {
+          if (cancelled) {
+            return;
+          }
+
+          analyser.getFloatTimeDomainData(samples);
+          let squaredSum = 0;
+          for (const sample of samples) {
+            squaredSum += sample * sample;
+          }
+
+          const rms = Math.sqrt(squaredSum / samples.length);
+          const normalizedLevel = Math.min(1, rms * 4.5);
+
+          setVoiceActivation((currentState) => stepVoiceActivation(currentState, {
+            inputLevel: normalizedLevel,
+            captureEnabled: audioSettingsRef.current.captureEnabled,
+            selfMuted: audioSettingsRef.current.selfMuted,
+            pushToTalk: audioSettingsRef.current.pushToTalk,
+            pushToTalkPressed: pushToTalkPressedRef.current,
+            inputGain: audioSettingsRef.current.inputGain,
+            outputGain: audioSettingsRef.current.outputGain
+          }));
+          animationFrameId = window.requestAnimationFrame(tick);
+        };
+
+        tick();
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+
+        setMeteringError(error instanceof Error ? error.message : "Microphone metering is unavailable.");
+        setVoiceActivation((currentState) => stepVoiceActivation(currentState, {
+          inputLevel: 0,
+          captureEnabled: appState.audio.captureEnabled,
+          selfMuted: appState.audio.selfMuted,
+          pushToTalk: appState.preferences.pushToTalk,
+          pushToTalkPressed: pushToTalkPressedRef.current,
+          inputGain: appState.audio.inputGain,
+          outputGain: appState.audio.outputGain
+        }));
+      }
+    };
+
+    void startMetering();
+
+    return () => {
+      cancelled = true;
+      stopMetering();
+    };
+  }, [
+    appState.audio.captureEnabled,
+    appState.audio.inputGain,
+    appState.audio.outputGain,
+    appState.audio.selfMuted,
+    appState.preferences.pushToTalk,
+    audioDevices.selectedInputId,
+    mediaDevices
+  ]);
 
   useEffect(() => {
     let active = true;
@@ -374,6 +645,14 @@ export function App() {
   );
   const connectionError = formError ?? appState.connection.error;
   const isElectronBridgeAvailable = Boolean(window.app?.getState);
+  const voiceActivationLabel = useMemo(
+    () => getVoiceActivationLabel(voiceActivation.mode),
+    [voiceActivation.mode]
+  );
+  const pushToTalkShortcutLabel = useMemo(
+    () => formatPushToTalkShortcut(appState.preferences.pushToTalkShortcut),
+    [appState.preferences.pushToTalkShortcut]
+  );
 
   const connectToServer = async () => {
     const normalizedServerAddress = serverAddress.trim();
@@ -565,6 +844,10 @@ export function App() {
                         status={handshakeState === "success" ? "live" : handshakeState === "error" ? "muted" : "idle"}
                         label={secureTransportLabel}
                       />
+                      <StatusChip
+                        status={voiceActivation.isTransmitting ? "live" : voiceActivation.mode === "muted" ? "muted" : "idle"}
+                        label={voiceActivationLabel}
+                      />
                       {appState.telemetry.jitterMs !== null ? (
                         <StatusChip status="live" label={`${appState.telemetry.jitterMs} ms jitter`} />
                       ) : null}
@@ -683,6 +966,60 @@ export function App() {
                           }}
                         />
                       </label>
+                      <Flex direction="column" gap="2">
+                        <Flex align="center" justify="between" gap="3">
+                          <Text size="2">Realtime metering</Text>
+                          <Badge
+                            size="2"
+                            variant="soft"
+                            color={voiceActivation.isTransmitting ? "green" : voiceActivation.mode === "muted" ? "red" : "gray"}
+                          >
+                            {voiceActivationLabel}
+                          </Badge>
+                        </Flex>
+                        <Box className="meter-stack">
+                          <Box className="meter-field">
+                            <Flex align="center" justify="between" gap="3">
+                              <Text size="1" color="gray">Input level</Text>
+                              <Text size="1" color="gray">{Math.round(voiceActivation.inputLevel * 100)}%</Text>
+                            </Flex>
+                            <div
+                              className="audio-meter"
+                              role="meter"
+                              aria-label="Input level meter"
+                              aria-valuemin={0}
+                              aria-valuemax={100}
+                              aria-valuenow={Math.round(voiceActivation.inputLevel * 100)}
+                            >
+                              <div className="audio-meter-fill" style={{ width: `${voiceActivation.inputLevel * 100}%` }} />
+                            </div>
+                          </Box>
+                          <Box className="meter-field">
+                            <Flex align="center" justify="between" gap="3">
+                              <Text size="1" color="gray">Transmit bus</Text>
+                              <Text size="1" color="gray">{Math.round(voiceActivation.outputLevel * 100)}%</Text>
+                            </Flex>
+                            <div
+                              className="audio-meter"
+                              role="meter"
+                              aria-label="Transmit level meter"
+                              aria-valuemin={0}
+                              aria-valuemax={100}
+                              aria-valuenow={Math.round(voiceActivation.outputLevel * 100)}
+                            >
+                              <div className="audio-meter-fill transmit" style={{ width: `${voiceActivation.outputLevel * 100}%` }} />
+                            </div>
+                          </Box>
+                        </Box>
+                        <Text size="1" color="gray">
+                          {appState.preferences.pushToTalk
+                            ? `Hold ${pushToTalkShortcutLabel} to open the send bus.`
+                            : `Voice activity detection opens the send bus once input crosses ${Math.round(DEFAULT_VAD_START_THRESHOLD * 100)}%.`}
+                        </Text>
+                        {meteringError ? (
+                          <Text size="1" color="ruby">{meteringError}</Text>
+                        ) : null}
+                      </Flex>
                     </Flex>
                     <Separator size="4" />
                     <Flex direction="column" gap="1">
@@ -916,11 +1253,42 @@ export function App() {
                         onCheckedChange={(checked) => {
                           void updatePreferences({ pushToTalk: checked });
                         }}
-                      />
-                    </Flex>
-                    <Flex align="center" justify="between" gap="3">
-                      <Box>
-                        <Text size="2">Auto reconnect</Text>
+                        />
+                      </Flex>
+                      <label className="device-field">
+                        <Text size="2" color="gray">PTT shortcut</Text>
+                        <input
+                          className="device-select"
+                          type="text"
+                          value={pushToTalkShortcutLabel}
+                          readOnly
+                          onFocus={(event) => {
+                            event.currentTarget.select();
+                          }}
+                          onKeyDown={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+
+                            if (event.key === "Backspace" || event.key === "Delete") {
+                              void updatePreferences({ pushToTalkShortcut: DEFAULT_PUSH_TO_TALK_SHORTCUT });
+                              return;
+                            }
+
+                            const nextShortcut = shortcutFromKeyboardEvent(event.nativeEvent);
+                            if (!nextShortcut) {
+                              return;
+                            }
+
+                            void updatePreferences({ pushToTalkShortcut: nextShortcut });
+                          }}
+                        />
+                      </label>
+                      <Text size="1" color="gray">
+                        Focus the shortcut field and press the key you want to hold. Current switch state: {pushToTalkPressed ? "Held" : "Released"}.
+                      </Text>
+                      <Flex align="center" justify="between" gap="3">
+                        <Box>
+                          <Text size="2">Auto reconnect</Text>
                         <Text size="1" color="gray">Retry the last server automatically.</Text>
                       </Box>
                       <Switch

@@ -19,6 +19,7 @@ test("AppClientStore hydrates persisted desktop preferences", () => {
       },
       preferences: {
         pushToTalk: true,
+        pushToTalkShortcut: "KeyV",
         autoReconnect: false,
         notificationsEnabled: false,
         showLatencyDetails: true
@@ -34,6 +35,7 @@ test("AppClientStore hydrates persisted desktop preferences", () => {
   assert.deepEqual(state.recentServers, ["voice.example.test:64738", "backup.example.test"]);
   assert.equal(state.audio.inputDeviceId, "usb-mic");
   assert.equal(state.audio.outputDeviceId, "usb-headset");
+  assert.equal(state.preferences.pushToTalkShortcut, "KeyV");
   assert.equal(state.preferences.showLatencyDetails, true);
 });
 
@@ -95,4 +97,22 @@ test("AppClientStore accepts IPv6 hosts without mistaking them for an invalid po
 
   assert.equal(store.getState().connection.status, "connected");
   assert.equal(store.getState().connection.serverAddress, "2001:db8::1");
+});
+
+test("AppClientStore normalizes invalid push-to-talk shortcuts back to the default binding", () => {
+  const store = new AppClientStore({
+    persistedState: {
+      preferences: {
+        pushToTalk: true,
+        pushToTalkShortcut: "",
+        autoReconnect: true,
+        notificationsEnabled: true,
+        showLatencyDetails: false
+      }
+    },
+    waitForConnection: async () => {}
+  });
+
+  assert.equal(store.getState().preferences.pushToTalkShortcut, "Space");
+  assert.equal(store.updatePreferences({ pushToTalkShortcut: "m" }).preferences.pushToTalkShortcut, "KeyM");
 });

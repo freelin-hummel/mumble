@@ -1,3 +1,8 @@
+import {
+  DEFAULT_PUSH_TO_TALK_SHORTCUT,
+  normalizePushToTalkShortcut
+} from "../src/voiceActivation.js";
+
 export type AppClientConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
 export type AppClientParticipantStatus = "live" | "muted" | "idle";
 
@@ -26,6 +31,7 @@ export type AppClientAudioSettings = {
 
 export type AppClientPreferences = {
   pushToTalk: boolean;
+  pushToTalkShortcut: string;
   autoReconnect: boolean;
   notificationsEnabled: boolean;
   showLatencyDetails: boolean;
@@ -87,6 +93,7 @@ const defaultAudioSettings = Object.freeze<AppClientAudioSettings>({
 
 const defaultPreferences = Object.freeze<AppClientPreferences>({
   pushToTalk: false,
+  pushToTalkShortcut: DEFAULT_PUSH_TO_TALK_SHORTCUT,
   autoReconnect: true,
   notificationsEnabled: true,
   showLatencyDetails: false
@@ -133,6 +140,7 @@ const normalizePreferences = (preferences?: Partial<AppClientPreferences> | null
   pushToTalk: typeof preferences?.pushToTalk === "boolean"
     ? preferences.pushToTalk
     : defaultPreferences.pushToTalk,
+  pushToTalkShortcut: normalizePushToTalkShortcut(preferences?.pushToTalkShortcut),
   autoReconnect: typeof preferences?.autoReconnect === "boolean"
     ? preferences.autoReconnect
     : defaultPreferences.autoReconnect,
