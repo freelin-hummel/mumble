@@ -11,5 +11,6 @@
     "skipLibCheck": true,
     "types": ["node", "electron"]
   },
-  "include": ["main.ts", "preload.ts"]
+  "include": ["main.ts", "preload.ts", "mumble/**/*.ts"],
+  "exclude": ["mumble/**/*.test.ts"]
 }

@@ -22,6 +22,12 @@ npm run dev
 npm run build
 ```
 
+### Test
+
+```bash
+npm test
+```
+
 ## Repo layout
 
 - electron/ - Electron main and preload processes
