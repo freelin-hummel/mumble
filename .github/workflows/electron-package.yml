@@ -9,7 +9,6 @@ on:
       - "index.html"
       - "package.json"
       - "package-lock.json"
-      - "README.md"
       - "src/**"
       - "tests/**"
       - "tsconfig.json"
@@ -24,7 +23,6 @@ on:
       - "index.html"
       - "package.json"
       - "package-lock.json"
-      - "README.md"
       - "src/**"
       - "tests/**"
       - "tsconfig.json"
@@ -34,6 +32,8 @@ jobs:
   package:
     name: Package (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:

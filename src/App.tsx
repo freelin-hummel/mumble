@@ -19,7 +19,8 @@ import {
   LightningBoltIcon,
   MixerHorizontalIcon,
   PersonIcon,
-  SpeakerLoudIcon
+  SpeakerLoudIcon,
+  SpeakerOffIcon
 } from "@radix-ui/react-icons";
 import { QuickAction } from "./components/QuickAction";
 import { SectionHeader } from "./components/SectionHeader";
@@ -164,7 +165,7 @@ export function App() {
                 <Flex direction="column" gap="4">
                   <SectionHeader title="Quick actions" subtitle="Small, reusable controls" />
                   <Grid columns={{ initial: "1", sm: "2" }} gap="3">
-                    <QuickAction title="Mute" description="Push-to-talk guard" icon={<PersonIcon />} />
+                    <QuickAction title="Mute" description="Push-to-talk guard" icon={<SpeakerOffIcon />} />
                     <QuickAction title="Output" description="Route to headset" icon={<SpeakerLoudIcon />} />
                     <QuickAction title="Latency" description="Realtime diagnostics" icon={<LightningBoltIcon />} />
                     <QuickAction title="Rooms" description="Switch channels" icon={<ChatBubbleIcon />} />
