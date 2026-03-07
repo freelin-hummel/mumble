@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { registerAppStateIpc } from "./appStateIpc.js";
 import { runSecureVoiceSelfTest } from "./secureVoice.js";
 import { registerVoiceTransportIpc, shutdownVoiceTransport } from "./voiceTransportIpc.js";
 
@@ -41,6 +42,7 @@ const createWindow = () => {
 
 app.whenReady().then(() => {
   ipcMain.handle("voice:run-self-test", () => runSecureVoiceSelfTest());
+  registerAppStateIpc();
   registerVoiceTransportIpc();
   createWindow();
 

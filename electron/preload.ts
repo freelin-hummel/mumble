@@ -1,5 +1,10 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type {
+  AppClientAudioSettings,
+  AppClientPreferences,
+  AppClientState
+} from "./appClientState.js";
+import type {
   UdpVoiceTransportConnectOptions,
   UdpVoiceTransportPacket,
   UdpVoiceTransportStatus
@@ -8,7 +13,24 @@ import type {
 contextBridge.exposeInMainWorld("app", {
   versions: process.versions,
   platform: process.platform,
-  runSecureVoiceSelfTest: () => ipcRenderer.invoke("voice:run-self-test")
+  runSecureVoiceSelfTest: () => ipcRenderer.invoke("voice:run-self-test"),
+  getState: () => ipcRenderer.invoke("app:get-state"),
+  connect: (options: { serverAddress: string; nickname: string }) => ipcRenderer.invoke("app:connect", options),
+  disconnect: () => ipcRenderer.invoke("app:disconnect"),
+  selectChannel: (channelId: string) => ipcRenderer.invoke("app:select-channel", channelId),
+  updateAudioSettings: (audio: Partial<AppClientAudioSettings>) => ipcRenderer.invoke("app:update-audio", audio),
+  updatePreferences: (preferences: Partial<AppClientPreferences>) => ipcRenderer.invoke("app:update-preferences", preferences),
+  onStateChanged: (listener: (state: AppClientState) => void) => {
+    const wrappedListener = (_event: Electron.IpcRendererEvent, state: AppClientState) => {
+      listener(state);
+    };
+
+    ipcRenderer.on("app:state-changed", wrappedListener);
+
+    return () => {
+      ipcRenderer.removeListener("app:state-changed", wrappedListener);
+    };
+  }
 });
 
 contextBridge.exposeInMainWorld("voice", {
