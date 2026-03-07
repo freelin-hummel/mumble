@@ -113,6 +113,9 @@ const audioPresets = [
   }
 ] as const;
 
+const ANALYSER_SMOOTHING_CONSTANT = 0.85;
+const RMS_TO_LEVEL_SCALING_FACTOR = 4.5;
+
 const statusCopy: Record<AppClientConnectionState["status"], string> = {
   disconnected: "Disconnected",
   connecting: "Connecting…",
@@ -489,7 +492,7 @@ export function App() {
         audioContext = new AudioContextCtor();
         const analyser = audioContext.createAnalyser();
         analyser.fftSize = 1024;
-        analyser.smoothingTimeConstant = 0.85;
+        analyser.smoothingTimeConstant = ANALYSER_SMOOTHING_CONSTANT;
         audioContext.createMediaStreamSource(mediaStream).connect(analyser);
         const samples = new Float32Array(analyser.fftSize);
 
@@ -507,7 +510,7 @@ export function App() {
           }
 
           const rms = Math.sqrt(squaredSum / samples.length);
-          const normalizedLevel = Math.min(1, rms * 4.5);
+          const normalizedLevel = Math.min(1, rms * RMS_TO_LEVEL_SCALING_FACTOR);
 
           setVoiceActivation((currentState) => stepVoiceActivation(currentState, {
             inputLevel: normalizedLevel,
@@ -1284,7 +1287,7 @@ export function App() {
                         />
                       </label>
                       <Text size="1" color="gray">
-                        Focus the shortcut field and press the key you want to hold. Current switch state: {pushToTalkPressed ? "Held" : "Released"}.
+                        Focus the shortcut field and press any key to set it as your push-to-talk shortcut. Press Backspace or Delete to reset to Space. Current switch state: {pushToTalkPressed ? "Held" : "Released"}.
                       </Text>
                       <Flex align="center" justify="between" gap="3">
                         <Box>

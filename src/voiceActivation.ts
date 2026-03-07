@@ -111,8 +111,8 @@ export function stepVoiceActivation(
     vadStopThreshold = DEFAULT_VAD_STOP_THRESHOLD
   }: VoiceActivationOptions
 ): VoiceActivationState {
-  const normalizedInputLevel = clampLevel(inputLevel * Math.max(0, inputGain) / 100);
-  const normalizedOutputLevel = clampLevel(normalizedInputLevel * Math.max(0, outputGain) / 100);
+  const normalizedInputLevel = clampLevel(inputLevel * normalizeGain(inputGain));
+  const normalizedOutputLevel = clampLevel(normalizedInputLevel * normalizeGain(outputGain));
 
   if (!captureEnabled || selfMuted) {
     return {
@@ -158,4 +158,12 @@ function clampLevel(value: number) {
   }
 
   return Math.min(1, Math.max(0, value));
+}
+
+function normalizeGain(value: number) {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+
+  return Math.max(0, value) / 100;
 }
