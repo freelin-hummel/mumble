@@ -119,6 +119,8 @@ const audioPresets = [
 
 const ANALYSER_SMOOTHING_CONSTANT = 0.85;
 const RMS_TO_LEVEL_SCALING_FACTOR = 4.5;
+const BASE_CHANNEL_PADDING = 16;
+const CHANNEL_INDENT_PER_LEVEL = 16;
 
 const statusCopy: Record<AppClientConnectionState["status"], string> = {
   disconnected: "Disconnected",
@@ -1160,7 +1162,10 @@ export function App() {
                             key={channel.id}
                             variant={isActive ? "solid" : "soft"}
                             color={isActive ? "cyan" : undefined}
-                            style={{ justifyContent: "space-between", paddingLeft: `${16 + (depth * 16)}px` }}
+                            style={{
+                              justifyContent: "space-between",
+                              paddingLeft: `${BASE_CHANNEL_PADDING + (depth * CHANNEL_INDENT_PER_LEVEL)}px`
+                            }}
                             onClick={() => {
                               void selectChannel(channel.id);
                             }}
