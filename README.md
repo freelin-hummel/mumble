@@ -3,6 +3,8 @@
 This repository now targets a single Electron-based client that can run as a desktop or web shell.
 The previous native Qt implementation is preserved in legacy/ for reference only.
 
+Development and production builds are managed with electron-vite.
+
 ## Goals
 
 - Electron + Vite + React + TypeScript foundation

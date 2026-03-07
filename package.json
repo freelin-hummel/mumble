@@ -12,16 +12,14 @@
     "url": "https://github.com/freelin-hummel/mumble.git"
   },
   "type": "module",
-  "main": "dist/electron/main.js",
+  "main": "dist/main/main.js",
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "clean": "node --input-type=module -e \"import { rmSync } from 'node:fs'; rmSync('dist', { recursive: true, force: true });\"",
     "clean:release": "node --input-type=module -e \"import { rmSync } from 'node:fs'; rmSync('release', { recursive: true, force: true });\"",
-    "build:renderer": "vite build",
-    "build:main": "tsc -p electron/tsconfig.json",
-    "build": "npm run clean && npm run build:renderer && npm run build:main",
-    "test": "node --input-type=module -e \"import { spawnSync } from 'node:child_process'; import { readdirSync } from 'node:fs'; import path from 'node:path'; const files = [...readdirSync('tests').filter((file) => /\\\\.test\\\\.(mjs|ts)$/.test(file)).sort().map((file) => path.join('tests', file)), ...readdirSync('electron/mumble').filter((file) => /\\\\.test\\\\.ts$/.test(file)).sort().map((file) => path.join('electron/mumble', file))]; const result = spawnSync(process.execPath, ['--import', 'tsx', '--test', ...files], { stdio: 'inherit' }); process.exit(result.status ?? 1);\"",
-    "preview": "vite preview",
+    "build": "npm run clean && electron-vite build",
+    "test": "node --input-type=module -e \"import { spawnSync } from 'node:child_process'; import { readdirSync } from 'node:fs'; import path from 'node:path'; const files = [...readdirSync('tests').filter((file) => /\\.test\\.(mjs|ts)$/.test(file)).sort().map((file) => path.join('tests', file)), ...readdirSync('electron/mumble').filter((file) => /\\.test\\.ts$/.test(file)).sort().map((file) => path.join('electron/mumble', file))]; const result = spawnSync(process.execPath, ['--import', 'tsx', '--test', ...files], { stdio: 'inherit' }); process.exit(result.status ?? 1);\"",
+    "preview": "electron-vite preview",
     "pack": "npm run clean:release && npm run build && electron-builder --dir --config electron-builder.config.mjs --publish never",
     "package": "npm run clean:release && npm run build && electron-builder --config electron-builder.config.mjs --publish never",
     "package:mac": "npm run clean:release && npm run build && electron-builder --mac --config electron-builder.config.mjs --publish never",
@@ -42,6 +40,7 @@
     "concurrently": "^9.0.1",
     "electron": "^35.7.5",
     "electron-builder": "^26.0.12",
+    "electron-vite": "^5.0.0",
     "tsx": "^4.19.0",
     "typescript": "^5.5.4",
     "vite": "^7.3.1"
