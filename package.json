@@ -20,7 +20,7 @@
     "build:renderer": "vite build",
     "build:main": "tsc -p electron/tsconfig.json",
     "build": "npm run clean && npm run build:renderer && npm run build:main",
-    "test": "node --test tests/*.test.mjs && node --import tsx --test electron/mumble/*.test.ts",
+    "test": "node --test tests/*.test.mjs && node --import tsx --test tests/*.test.ts electron/mumble/*.test.ts",
     "preview": "vite preview",
     "pack": "npm run clean:release && npm run build && electron-builder --dir --config electron-builder.config.mjs --publish never",
     "package": "npm run clean:release && npm run build && electron-builder --config electron-builder.config.mjs --publish never",
