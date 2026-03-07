@@ -137,7 +137,6 @@ const createFallbackConnectedState = (
   },
   recentServers: buildRecentServers(currentState.recentServers, serverAddress)
 });
-
 export function App() {
   const [handshakeState, setHandshakeState] = useState<"idle" | "running" | "success" | "error">("idle");
   const [selfTestResult, setSelfTestResult] = useState<SecureVoiceSelfTestResult | null>(null);
@@ -496,7 +495,7 @@ export function App() {
                     <Badge size="2" variant="solid" className="pulse">
                       desktop session shell
                     </Badge>
-                    <Heading size="8">Mumble, reimagined for desktop and web</Heading>
+                    <Heading size="8">Mumble desktop client</Heading>
                     <Text size="3" color="gray">
                       Connect to a server, switch channels, and manage audio without leaving the renderer.
                     </Text>
