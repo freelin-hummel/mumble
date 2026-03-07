@@ -50,6 +50,13 @@ test('screen ids and source routes are unique', () => {
 	assert.equal(new Set(routes).size, routes.length);
 });
 
+test('screens without matching Qt forms are still explicitly represented', () => {
+	const nativeOnlyScreens = desktopScreens.filter((screen) => screen.sourceUi === null);
+
+	assert.deepEqual(nativeOnlyScreens.map((screen) => screen.id), ['developer-console']);
+	assert.match(nativeOnlyScreens[0].summary, /not backed by a \.ui form/i);
+});
+
 test('electron and build scripts are available from package.json', async () => {
 	const packageJson = JSON.parse(await readFile(path.join(webClientDir, 'package.json'), 'utf8'));
 

@@ -6,7 +6,7 @@
   "author": "The Mumble Developers",
   "repository": {
     "type": "git",
-    "url": "https://github.com/freelin-hummel/mumble.git"
+    "url": "https://github.com/mumble-voip/mumble.git"
   },
   "type": "module",
   "main": "electron/main.mjs",
