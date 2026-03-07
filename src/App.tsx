@@ -147,24 +147,6 @@ const formatChatTimestamp = (value: string) => {
   });
 };
 
-const getChannelDepth = (channels: AppClientState["channels"], channelId: string) => {
-  let depth = 0;
-  let currentChannel = channels.find((channel) => channel.id === channelId) ?? null;
-  const visitedChannelIds = new Set<string>();
-
-  while (currentChannel?.parentId) {
-    if (visitedChannelIds.has(currentChannel.parentId)) {
-      break;
-    }
-
-    visitedChannelIds.add(currentChannel.parentId);
-    currentChannel = channels.find((channel) => channel.id === currentChannel?.parentId) ?? null;
-    depth += 1;
-  }
-
-  return depth;
-};
-
 const createFallbackConnectedState = (
   currentState: AppClientState,
   serverAddress: string,
@@ -1198,7 +1180,6 @@ export function App() {
                       {appState.channels.map((channel) => {
                         const participantCount = channel.participantIds.length;
                         const isActive = channel.id === appState.activeChannelId;
-                        const depth = getChannelDepth(appState.channels, channel.id);
                         return (
                           <Button
                             key={channel.id}
@@ -1206,7 +1187,7 @@ export function App() {
                             color={isActive ? "cyan" : undefined}
                             style={{
                               justifyContent: "space-between",
-                              paddingLeft: `${BASE_CHANNEL_PADDING + (depth * CHANNEL_INDENT_PER_LEVEL)}px`
+                              paddingLeft: `${BASE_CHANNEL_PADDING + (channel.depth * CHANNEL_INDENT_PER_LEVEL)}px`
                             }}
                             onClick={() => {
                               void selectChannel(channel.id);
@@ -1214,7 +1195,7 @@ export function App() {
                             disabled={!channel.permissions.enter}
                           >
                             <Flex align="center" justify="between" width="100%" gap="3">
-                              <Flex align="center" gap="2" style={{ paddingLeft: `${channel.depth}rem` }}>
+                              <Flex align="center" gap="2">
                                 <span>{channel.name}</span>
                                 {!channel.permissions.enter ? (
                                   <Text as="span" size="1" color="gray">Locked</Text>
