@@ -22,6 +22,42 @@ npm run dev
 npm run build
 ```
 
+## Packaging
+
+This project uses **electron-builder** for packaging because it fits the current Electron + Vite + React split with minimal extra setup and can emit native artifacts for macOS, Windows, and Linux from the same build output.
+
+### Packaging scripts
+
+```bash
+npm run pack          # unpacked app for the current platform
+npm run package       # installable artifact for the current platform
+npm run package:mac   # macOS dmg + zip
+npm run package:win   # Windows NSIS installer
+npm run package:linux # Linux AppImage + deb
+```
+
+`npm run build` still performs the production renderer + main/preload build, writing the renderer bundle to `dist/renderer` and the Electron entrypoints to `dist/electron`. Packaging then consumes those built files and writes artifacts to `release/`.
+
+### Packaging configuration
+
+- Config file: `electron-builder.config.mjs`
+- App metadata: `appId`, product name, and artifact naming live in the builder config
+- Icons: existing assets under `legacy/icons/` are reused for `.icns`, `.ico`, and Linux packaging
+- Artifact naming: `${productName}-${version}-${os}-${arch}.${ext}`
+
+### Optional signing placeholders
+
+Packaging works unsigned by default. To enable signing in local builds or CI, provide the standard `electron-builder` environment variables before running the package command:
+
+- macOS identity: `CSC_NAME`
+- macOS certificate: `CSC_LINK`, `CSC_KEY_PASSWORD`
+- Windows certificate: `WIN_CSC_LINK`, `WIN_CSC_KEY_PASSWORD`, optional `WIN_CSC_SUBJECT_NAME`
+- Linux artifacts: AppImage and DEB targets are enabled by default in the packaging config
+
+### CI packaging step
+
+`.github/workflows/electron-package.yml` runs `npm test` and then packages the app on `ubuntu-latest`, `macos-latest`, and `windows-latest`, uploading the generated `release/` artifacts without publishing them.
+
 ## Repo layout
 
 - electron/ - Electron main and preload processes
