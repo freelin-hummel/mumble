@@ -116,3 +116,148 @@ test("AppClientStore normalizes invalid push-to-talk shortcuts back to the defau
   assert.equal(store.getState().preferences.pushToTalkShortcut, "Space");
   assert.equal(store.updatePreferences({ pushToTalkShortcut: "m" }).preferences.pushToTalkShortcut, "KeyM");
 });
+
+test("AppClientStore syncs a stable channel tree with participant presence and permissions", async () => {
+  const store = new AppClientStore({
+    waitForConnection: async () => {}
+  });
+
+  await store.connect({
+    serverAddress: "voice.example.test:64738",
+    nickname: "Scout"
+  });
+
+  const state = store.syncSessionSnapshot({
+    channels: [
+      { id: "lounge", name: "Lounge", parentId: "root", position: 2 },
+      { id: "ops", name: "Ops", parentId: "root", position: 1, permissions: { enter: false, speak: false } },
+      { id: "games", name: "Games", parentId: "lounge", position: 0, permissions: { speak: false } },
+      { id: "root", name: "Root", position: 0 }
+    ],
+    participants: [
+      { id: "guest", name: "Bravo", channelId: "root", status: "idle" },
+      { id: "self", name: "Scout", channelId: "games", status: "live", isSelf: true },
+      { id: "ghost", name: "Ghost", channelId: "missing", status: "muted" }
+    ]
+  });
+
+  assert.deepEqual(state.channels.map((channel) => ({
+    id: channel.id,
+    parentId: channel.parentId,
+    depth: channel.depth,
+    participantIds: channel.participantIds,
+    permissions: {
+      enter: channel.permissions.enter,
+      speak: channel.permissions.speak
+    }
+  })), [
+    {
+      id: "root",
+      parentId: null,
+      depth: 0,
+      participantIds: ["guest"],
+      permissions: { enter: true, speak: true }
+    },
+    {
+      id: "ops",
+      parentId: "root",
+      depth: 1,
+      participantIds: [],
+      permissions: { enter: false, speak: false }
+    },
+    {
+      id: "lounge",
+      parentId: "root",
+      depth: 1,
+      participantIds: [],
+      permissions: { enter: true, speak: true }
+    },
+    {
+      id: "games",
+      parentId: "lounge",
+      depth: 2,
+      participantIds: ["self"],
+      permissions: { enter: true, speak: false }
+    }
+  ]);
+  assert.deepEqual(state.participants.map((participant) => ({
+    id: participant.id,
+    channelId: participant.channelId,
+    status: participant.status,
+    isSelf: participant.isSelf
+  })), [
+    { id: "guest", channelId: "root", status: "idle", isSelf: undefined },
+    { id: "self", channelId: "games", status: "live", isSelf: true }
+  ]);
+  assert.equal(state.activeChannelId, "games");
+});
+
+test("AppClientStore keeps channel selection aligned with enter permissions", async () => {
+  const store = new AppClientStore({
+    waitForConnection: async () => {}
+  });
+
+  await store.connect({
+    serverAddress: "voice.example.test:64738",
+    nickname: "Scout"
+  });
+
+  store.syncSessionSnapshot({
+    channels: [
+      { id: "root", name: "Root", position: 0 },
+      { id: "ops", name: "Ops", parentId: "root", position: 0, permissions: { enter: false } },
+      { id: "lounge", name: "Lounge", parentId: "root", position: 1 }
+    ],
+    participants: []
+  });
+
+  assert.equal(store.selectChannel("ops").activeChannelId, "root");
+  assert.equal(store.selectChannel("lounge").activeChannelId, "lounge");
+  assert.equal(store.updateChannelPermissions("lounge", { enter: false }).activeChannelId, "root");
+  assert.equal(store.updateChannelPermissions("root", { enter: false }).activeChannelId, null);
+});
+
+test("AppClientStore incrementally applies channel and participant updates", async () => {
+  const store = new AppClientStore({
+    waitForConnection: async () => {}
+  });
+
+  await store.connect({
+    serverAddress: "voice.example.test:64738",
+    nickname: "Scout"
+  });
+
+  store.upsertChannel({ id: "root", name: "Root", position: 0 });
+  store.upsertChannel({ id: "squad", name: "Squad", parentId: "root", position: 0, permissions: { speak: false } });
+  store.upsertParticipant({ id: "self", name: "Scout", channelId: "root", status: "live", isSelf: true });
+  store.upsertParticipant({ id: "alpha", name: "Alpha", channelId: "squad", status: "muted" });
+
+  let state = store.getState();
+  assert.deepEqual(state.channels.map((channel) => ({
+    id: channel.id,
+    participantIds: channel.participantIds,
+    depth: channel.depth,
+    speak: channel.permissions.speak
+  })), [
+    { id: "root", participantIds: ["self"], depth: 0, speak: true },
+    { id: "squad", participantIds: ["alpha"], depth: 1, speak: false }
+  ]);
+
+  store.upsertParticipant({ id: "alpha", channelId: "root", status: "live" });
+  state = store.getState();
+  assert.deepEqual(state.channels.map((channel) => ({
+    id: channel.id,
+    participantIds: channel.participantIds
+  })), [
+    { id: "root", participantIds: ["self", "alpha"] },
+    { id: "squad", participantIds: [] }
+  ]);
+
+  store.removeParticipant("alpha");
+  assert.deepEqual(store.getState().participants.map((participant) => participant.id), ["self"]);
+
+  store.removeChannel("squad");
+  state = store.getState();
+  assert.deepEqual(state.channels.map((channel) => channel.id), ["root"]);
+  assert.equal(state.activeChannelId, "root");
+});
