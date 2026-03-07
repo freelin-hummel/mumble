@@ -14,36 +14,36 @@ The previous native Qt implementation is preserved in legacy/ for reference only
 Coordinate the Electron client migration as separate PRs attached to the matching subissues.
 
 1. **[#4] 01 - Implement TCP control channel + protobuf framing**
-   - Blocks: 6, 10, 11
+   - Blocks: #6, #10, #11
 2. **[#6] 02 - Auth + crypto handshake**
-   - Depends on: 4
-   - Blocks: 5
+   - Depends on: #4
+   - Blocks: #5
 3. **[#5] 03 - Implement UDP voice transport**
-   - Depends on: 4, 6
+   - Depends on: #4, #6
 4. **[#7] 04 - Audio device management**
-   - Blocks: 8, 9
+   - Blocks: #8, #9
 5. **[#8] 05 - DSP pipeline MVP**
-   - Depends on: 7
-   - Blocks: 9
+   - Depends on: #7
+   - Blocks: #9
 6. **[#9] 06 - Mixer + VAD/PTT**
-   - Depends on: 7, 8
+   - Depends on: #7, #8
 7. **[#10] 07 - Channel/user state model**
-   - Depends on: 4
-   - Blocks: 11
+   - Depends on: #4
+   - Blocks: #11
 8. **[#11] 08 - Connect + room UI**
-   - Depends on: 10
+   - Depends on: #10
 9. **[#12] 09 - Settings + storage**
-   - Can run in parallel with 7-11
+   - Can run in parallel with #7-#11
 10. **[#13] 10 - IPC security + preload API**
     - Should land before broad feature work
 11. **[#14] 11 - Telemetry + diagnostics**
-    - Can start after 4; independent of UI
+    - Can start after #4; independent of UI
 12. **[#2] 12 - Electron packaging and distribution setup**
-    - Depends on: core app running (4, 10, 11)
+    - Depends on: #4, #10, #11 (core app running)
 
 Notes:
 
-- The order is rough; some tracks can proceed in parallel after 4.
+- The order is rough; some tracks can proceed in parallel after #4.
 - Update this roadmap as dependencies change.
 
 ## Quick start
