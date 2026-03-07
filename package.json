@@ -14,7 +14,7 @@
   "type": "module",
   "main": "dist/electron/main.js",
   "scripts": {
-    "dev": "concurrently -k \"vite\" \"VITE_DEV_SERVER_URL=http://localhost:5173 tsx electron/main.ts\"",
+    "dev": "node scripts/dev.mjs",
     "clean": "node --input-type=module -e \"import { rmSync } from 'node:fs'; rmSync('dist', { recursive: true, force: true });\"",
     "clean:release": "node --input-type=module -e \"import { rmSync } from 'node:fs'; rmSync('release', { recursive: true, force: true });\"",
     "build:renderer": "vite build",
@@ -38,12 +38,12 @@
     "@types/node": "^22.10.2",
     "@types/react": "^18.3.11",
     "@types/react-dom": "^18.3.1",
-    "@vitejs/plugin-react": "^4.3.4",
+    "@vitejs/plugin-react": "^5.1.4",
     "concurrently": "^9.0.1",
-    "electron": "^31.0.0",
+    "electron": "^35.7.5",
     "electron-builder": "^26.0.12",
     "tsx": "^4.19.0",
     "typescript": "^5.5.4",
-    "vite": "^5.4.1"
+    "vite": "^7.3.1"
   }
 }
