@@ -14,9 +14,19 @@
 	--accent: #b9e248;
 	--accent-strong: #7bb02f;
 	--accent-warm: #ffcb59;
+	--accent-contrast: #101706;
+	--accent-border: rgba(55, 73, 18, 0.98);
+	--accent-active-start: rgba(190, 226, 85, 0.92);
+	--accent-active-end: rgba(115, 151, 37, 0.98);
+	--accent-highlight-start: #d5eb74;
+	--accent-highlight-mid: #95c73a;
+	--accent-highlight-end: #6a9723;
+	--accent-ribbon-start: #5d6832;
+	--accent-ribbon-mid: #b8db48;
+	--accent-ribbon-end: #f7d564;
 	--success: #9ae46b;
 	--shadow: 0 18px 32px rgba(0, 0, 0, 0.45);
-	font-family: Tahoma, Verdana, "Segoe UI", sans-serif;
+	font-family: system-ui, Tahoma, Verdana, "Segoe UI", sans-serif;
 }
 
 * {
@@ -42,8 +52,7 @@ body::before {
 	background:
 		repeating-linear-gradient(180deg, rgba(255, 255, 255, 0.02) 0 1px, transparent 1px 3px),
 		linear-gradient(135deg, rgba(255, 255, 255, 0.05), transparent 34%, rgba(185, 226, 72, 0.04) 70%, transparent 100%);
-	mix-blend-mode: screen;
-	opacity: 0.45;
+	opacity: 0.18;
 }
 
 button,
@@ -112,6 +121,7 @@ input {
 	box-shadow: var(--shadow);
 	padding: 1.25rem;
 	position: relative;
+	backdrop-filter: blur(4px);
 }
 
 .card::before {
@@ -214,9 +224,9 @@ input {
 .nav-overview.active,
 .nav-link.active,
 .link-button:hover {
-	background: linear-gradient(180deg, rgba(190, 226, 85, 0.92) 0%, rgba(115, 151, 37, 0.98) 100%);
-	border-color: rgba(55, 73, 18, 0.98);
-	color: #101706;
+	background: linear-gradient(180deg, var(--accent-active-start) 0%, var(--accent-active-end) 100%);
+	border-color: var(--accent-border);
+	color: var(--accent-contrast);
 	text-shadow: none;
 }
 
@@ -248,8 +258,8 @@ input {
 }
 
 .primary-action {
-	background: linear-gradient(180deg, #d5eb74 0%, #95c73a 48%, #6a9723 100%);
-	color: #111806;
+	background: linear-gradient(180deg, var(--accent-highlight-start) 0%, var(--accent-highlight-mid) 48%, var(--accent-highlight-end) 100%);
+	color: var(--accent-contrast);
 	padding: 0.85rem 1.2rem;
 }
 
@@ -382,7 +392,7 @@ input {
 }
 
 .status-badge {
-	background: linear-gradient(180deg, rgba(184, 226, 72, 0.92) 0%, rgba(113, 154, 35, 1) 100%);
+	background: linear-gradient(180deg, var(--accent-highlight-start) 0%, var(--accent-highlight-end) 100%);
 	color: var(--success);
 }
 
@@ -424,7 +434,7 @@ input {
 	right: 0;
 	top: 0;
 	height: 8px;
-	background: linear-gradient(90deg, #5d6832 0%, #b8db48 28%, #f7d564 62%, #5d6832 100%);
+	background: linear-gradient(90deg, var(--accent-ribbon-start) 0%, var(--accent-ribbon-mid) 28%, var(--accent-ribbon-end) 62%, var(--accent-ribbon-start) 100%);
 	box-shadow: 0 1px 0 rgba(255, 255, 255, 0.24);
 }
 
