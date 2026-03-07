@@ -533,9 +533,8 @@ export async function createSecureVoiceDemoServer(options: SecureVoiceDemoServer
         socket.destroy();
       }
 
-      if ("closeAllConnections" in tcpServer) {
-        (tcpServer as typeof tcpServer & { closeAllConnections?: () => void }).closeAllConnections?.();
-      }
+      const closeAllConnections = (tcpServer as { closeAllConnections?: () => void }).closeAllConnections;
+      closeAllConnections?.call(tcpServer);
 
       await Promise.all([
         new Promise<void>((resolve) => tcpServer.close(() => resolve())),

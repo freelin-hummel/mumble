@@ -217,7 +217,7 @@ export function App() {
                 </Box>
                 <Card className="section-card" style={{ minWidth: 260 }}>
                   <Flex direction="column" gap="3">
-                    <SectionHeader title="Audio devices" subtitle="Hot-swap aware routing" />
+                      <SectionHeader title="Audio devices" subtitle="Hot-swap aware routing" />
                     <Flex align="center" justify="between" gap="3" wrap="wrap">
                       <Badge size="2" variant="outline">
                         {audioDevices.detectedInputCount} inputs · {audioDevices.detectedOutputCount} outputs
@@ -279,8 +279,8 @@ export function App() {
                       </Text>
                       <Text size="2" color="gray">
                         {outputRoutingReady
-                          ? "Notification audio follows the selected output device."
-                          : "Output routing is tracked and will be applied when sink switching is supported."}
+                          ? "Preview audio follows the selected output device."
+                          : "Preview audio routing follows this selection when the current browser or runtime supports sink switching."}
                       </Text>
                       {audioDevices.error ? (
                         <Text size="2" color="ruby">{audioDevices.error}</Text>

@@ -30,13 +30,14 @@ export type UdpVoiceTransportBinaryPayload = ArrayBuffer | ArrayBufferView;
 
 const DEFAULT_BIND_ADDRESS = "0.0.0.0";
 const MAX_VOICE_PACKET_BYTES = 2048;
+const MAX_PORT = 65_535;
 
 type SocketFactory = () => Socket;
 type MessageListener = (packet: UdpVoiceTransportPacket) => void;
 type StatusListener = (status: UdpVoiceTransportStatus) => void;
 
 const isValidPort = (value: number, allowZero = false) =>
-  Number.isInteger(value) && value >= (allowZero ? 0 : 1) && value <= 65535;
+  Number.isInteger(value) && value >= (allowZero ? 0 : 1) && value <= MAX_PORT;
 
 const toAddressInfo = (socket: Socket): AddressInfo => {
   const address = socket.address();
