@@ -49,6 +49,7 @@ declare global {
 
   interface AppClientPreferences {
     pushToTalk: boolean;
+    pushToTalkShortcut: string;
     autoReconnect: boolean;
     notificationsEnabled: boolean;
     showLatencyDetails: boolean;
