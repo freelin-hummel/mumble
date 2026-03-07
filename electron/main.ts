@@ -1,8 +1,4 @@
-<<<<<<< HEAD
 import { app, BrowserWindow, ipcMain } from "electron";
-=======
-import { app, BrowserWindow } from "electron";
->>>>>>> e0acd024d (Adopt electron-vite for desktop dev workflow)
 import { fileURLToPath } from "node:url";
 import { runSecureVoiceSelfTest } from "./secureVoice.js";
 import { registerVoiceTransportIpc, shutdownVoiceTransport } from "./voiceTransportIpc.js";

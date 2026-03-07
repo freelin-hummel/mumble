@@ -18,7 +18,6 @@ import {
   GlobeIcon,
   LightningBoltIcon,
   MixerHorizontalIcon,
-  PersonIcon,
   SpeakerLoudIcon,
   SpeakerOffIcon
 } from "@radix-ui/react-icons";
@@ -34,19 +33,6 @@ import { QuickAction } from "./components/QuickAction";
 import { SectionHeader } from "./components/SectionHeader";
 import { StatusChip } from "./components/StatusChip";
 import { dspFeatures, loadDspPipeline, setDspFeature } from "./dspPipeline.mjs";
-
-const channelUsers = [
-  { name: "Aster", status: "live" },
-  { name: "Milo", status: "muted" },
-  { name: "Quinn", status: "idle" },
-  { name: "Rhea", status: "live" }
-] as const;
-
-const audioPresets = [
-  { label: "Studio clarity", description: "Wideband, low noise gate" },
-  { label: "Party mode", description: "Boost presence and limiter" },
-  { label: "Late night", description: "Soft compressor, warm EQ" }
-];
 
 export function App() {
   const [handshakeState, setHandshakeState] = useState<"idle" | "running" | "success" | "error">("idle");
@@ -186,11 +172,11 @@ export function App() {
                 <Box style={{ flex: 1 }}>
                   <Flex direction="column" gap="3">
                     <Badge size="2" variant="solid" className="pulse">
-                      Live prototype
+                      Desktop shell
                     </Badge>
-                    <Heading size="8">Mumble, reimagined for desktop and web</Heading>
+                    <Heading size="8">Mumble desktop client</Heading>
                     <Text size="3" color="gray">
-                      Fast join, low-latency voice, and composable controls powered by Radix UI.
+                      Electron and React are wired up, but connection state, channels, and audio behavior still need implementation.
                     </Text>
                     <Flex gap="3" wrap="wrap">
                       <TextField.Root size="3" placeholder="Server address" style={{ minWidth: 240 }}>
@@ -203,10 +189,10 @@ export function App() {
                           <ChatBubbleIcon />
                         </TextField.Slot>
                       </TextField.Root>
-                      <Button size="3">Join voice</Button>
+                      <Button size="3" disabled>Connect</Button>
                     </Flex>
                     <Flex gap="3" align="center">
-                      <StatusChip status="live" label="Low jitter" />
+                      <StatusChip status="idle" label="UI shell only" />
                       <StatusChip status="idle" label={`Running on ${platformLabel}`} />
                       <StatusChip
                         status={handshakeState === "success" ? "live" : handshakeState === "error" ? "muted" : "idle"}
@@ -217,7 +203,7 @@ export function App() {
                 </Box>
                 <Card className="section-card" style={{ minWidth: 260 }}>
                   <Flex direction="column" gap="3">
-                      <SectionHeader title="Audio devices" subtitle="Hot-swap aware routing" />
+                    <SectionHeader title="Audio devices" subtitle="Hot-swap aware routing" />
                     <Flex align="center" justify="between" gap="3" wrap="wrap">
                       <Badge size="2" variant="outline">
                         {audioDevices.detectedInputCount} inputs · {audioDevices.detectedOutputCount} outputs
@@ -294,28 +280,20 @@ export function App() {
             <Grid columns={{ initial: "1", md: "2" }} gap="6">
               <Card className="section-card fade-in delay-1">
                 <Flex direction="column" gap="4">
-                  <SectionHeader title="Active room" subtitle="Nebula Lounge" />
+                  <SectionHeader title="Participants" subtitle="No active session" />
                   <Flex direction="column" gap="3">
-                    {channelUsers.map((user) => (
-                      <Flex key={user.name} align="center" justify="between">
-                        <Flex align="center" gap="3">
-                          <Box
-                            style={{
-                              width: 38,
-                              height: 38,
-                              borderRadius: 12,
-                              background: "rgba(255,255,255,0.08)",
-                              display: "grid",
-                              placeItems: "center"
-                            }}
-                          >
-                            <PersonIcon />
-                          </Box>
-                          <Text size="3">{user.name}</Text>
-                        </Flex>
-                        <StatusChip status={user.status} label={user.status} />
-                      </Flex>
-                    ))}
+                    <Box
+                      style={{
+                        borderRadius: 16,
+                        padding: 20,
+                        background: "rgba(255,255,255,0.04)",
+                        border: "1px dashed rgba(255,255,255,0.12)"
+                      }}
+                    >
+                      <Text size="2" color="gray">
+                        Connect to a server before rendering channels, participants, and speaking status.
+                      </Text>
+                    </Box>
                   </Flex>
                 </Flex>
               </Card>
@@ -323,22 +301,10 @@ export function App() {
               <Card className="section-card fade-in delay-2">
                 <Flex direction="column" gap="4">
                   <SectionHeader
-                    title="Audio chain"
-                    subtitle="Reusable, composable modules"
+                    title="DSP pipeline"
+                    subtitle="Local voice processing controls"
                     action={<IconButton variant="ghost"><MixerHorizontalIcon /></IconButton>}
                   />
-                  <Grid columns={{ initial: "1", sm: "2" }} gap="3">
-                    {audioPresets.map((preset) => (
-                      <Card key={preset.label} className="section-card">
-                        <Flex direction="column" gap="2">
-                          <Text weight="bold">{preset.label}</Text>
-                          <Text size="2" color="gray">{preset.description}</Text>
-                          <Button variant="soft" size="2">Apply</Button>
-                        </Flex>
-                      </Card>
-                    ))}
-                  </Grid>
-                  <Separator size="4" />
                   <Flex direction="column" gap="3">
                     {dspFeatures.map((feature) => (
                       <Flex key={feature.key} align="center" justify="between" gap="3">
@@ -373,12 +339,12 @@ export function App() {
 
               <Card className="section-card fade-in delay-3">
                 <Flex direction="column" gap="4">
-                  <SectionHeader title="Quick actions" subtitle="Small, reusable controls" />
+                  <SectionHeader title="Quick actions" subtitle="Visible but not connected" />
                   <Grid columns={{ initial: "1", sm: "2" }} gap="3">
-                    <QuickAction title="Mute" description="Push-to-talk guard" icon={<SpeakerOffIcon />} />
-                    <QuickAction title="Output" description="Route to headset" icon={<SpeakerLoudIcon />} />
-                    <QuickAction title="Latency" description="Realtime diagnostics" icon={<LightningBoltIcon />} />
-                    <QuickAction title="Rooms" description="Switch channels" icon={<ChatBubbleIcon />} />
+                    <QuickAction title="Mute" description="Needs capture state and push-to-talk wiring." icon={<SpeakerOffIcon />} />
+                    <QuickAction title="Output" description="Needs device enumeration and selection state." icon={<SpeakerLoudIcon />} />
+                    <QuickAction title="Latency" description="Needs realtime telemetry from audio and network layers." icon={<LightningBoltIcon />} />
+                    <QuickAction title="Rooms" description="Needs live channel state and navigation handlers." icon={<ChatBubbleIcon />} />
                   </Grid>
                 </Flex>
               </Card>
