@@ -129,7 +129,9 @@ export class UdpVoiceTransport {
       remotePort: options.port,
       localAddress: null,
       localPort: null,
-      lastError: null
+      lastError: null,
+      lastSentAt: null,
+      lastReceivedAt: null
     });
 
     try {
@@ -148,9 +150,13 @@ export class UdpVoiceTransport {
     } catch (error) {
       this.updateStatus({
         state: "disconnected",
+        remoteAddress: null,
+        remotePort: null,
         localAddress: null,
         localPort: null,
-        lastError: error instanceof Error ? error.message : String(error)
+        lastError: error instanceof Error ? error.message : String(error),
+        lastSentAt: null,
+        lastReceivedAt: null
       });
 
       await this.closeSocket(socket);
@@ -196,7 +202,10 @@ export class UdpVoiceTransport {
           remoteAddress: null,
           remotePort: null,
           localAddress: null,
-          localPort: null
+          localPort: null,
+          lastError: null,
+          lastSentAt: null,
+          lastReceivedAt: null
         });
       }
 
@@ -211,7 +220,9 @@ export class UdpVoiceTransport {
       remotePort: null,
       localAddress: null,
       localPort: null,
-      lastError: null
+      lastError: null,
+      lastSentAt: null,
+      lastReceivedAt: null
     });
 
     return this.getStatus();

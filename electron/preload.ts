@@ -1,4 +1,9 @@
 import { contextBridge, ipcRenderer } from "electron";
+import type {
+  UdpVoiceTransportConnectOptions,
+  UdpVoiceTransportPacket,
+  UdpVoiceTransportStatus
+} from "./udpVoiceTransport.js";
 
 contextBridge.exposeInMainWorld("app", {
   versions: process.versions,
@@ -6,17 +11,14 @@ contextBridge.exposeInMainWorld("app", {
 });
 
 contextBridge.exposeInMainWorld("voice", {
-  connect: (options: { host: string; port: number; bindAddress?: string; bindPort?: number }) =>
+  connect: (options: UdpVoiceTransportConnectOptions) =>
     ipcRenderer.invoke("voice:connect", options),
   send: (payload: ArrayBuffer | ArrayBufferView) => ipcRenderer.invoke("voice:send", payload),
   disconnect: () => ipcRenderer.invoke("voice:disconnect"),
   getStatus: () => ipcRenderer.invoke("voice:get-status"),
-  onMessage: (listener: (packet: { payload: Uint8Array; remoteAddress: string; remotePort: number; receivedAt: number }) => void) => {
-    const wrappedListener = (_event: Electron.IpcRendererEvent, packet: { payload: Uint8Array; remoteAddress: string; remotePort: number; receivedAt: number }) => {
-      listener({
-        ...packet,
-        payload: new Uint8Array(packet.payload)
-      });
+  onMessage: (listener: (packet: UdpVoiceTransportPacket) => void) => {
+    const wrappedListener = (_event: Electron.IpcRendererEvent, packet: UdpVoiceTransportPacket) => {
+      listener(packet);
     };
 
     ipcRenderer.on("voice:message", wrappedListener);
@@ -25,26 +27,8 @@ contextBridge.exposeInMainWorld("voice", {
       ipcRenderer.removeListener("voice:message", wrappedListener);
     };
   },
-  onStatus: (listener: (status: {
-    state: "disconnected" | "connecting" | "connected";
-    remoteAddress: string | null;
-    remotePort: number | null;
-    localAddress: string | null;
-    localPort: number | null;
-    lastError: string | null;
-    lastSentAt: number | null;
-    lastReceivedAt: number | null;
-  }) => void) => {
-    const wrappedListener = (_event: Electron.IpcRendererEvent, status: {
-      state: "disconnected" | "connecting" | "connected";
-      remoteAddress: string | null;
-      remotePort: number | null;
-      localAddress: string | null;
-      localPort: number | null;
-      lastError: string | null;
-      lastSentAt: number | null;
-      lastReceivedAt: number | null;
-    }) => {
+  onStatus: (listener: (status: UdpVoiceTransportStatus) => void) => {
+    const wrappedListener = (_event: Electron.IpcRendererEvent, status: UdpVoiceTransportStatus) => {
       listener(status);
     };
 

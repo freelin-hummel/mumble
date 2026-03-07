@@ -7,6 +7,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 let mainWindow: BrowserWindow | null = null;
+let isShuttingDown = false;
 
 const createWindow = () => {
   mainWindow = new BrowserWindow({
@@ -48,8 +49,16 @@ app.whenReady().then(() => {
   });
 });
 
-app.on("before-quit", () => {
-  void shutdownVoiceTransport();
+app.on("before-quit", (event) => {
+  if (isShuttingDown) {
+    return;
+  }
+
+  event.preventDefault();
+  isShuttingDown = true;
+  void shutdownVoiceTransport().finally(() => {
+    app.quit();
+  });
 });
 
 app.on("window-all-closed", () => {

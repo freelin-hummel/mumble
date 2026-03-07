@@ -156,6 +156,7 @@ test("UDP voice transport disconnect resets its status", async () => {
       host: "127.0.0.1",
       port: serverAddress.port
     });
+    await transport.send(new Uint8Array([6, 5, 4]));
 
     const status = await transport.disconnect();
 
