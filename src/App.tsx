@@ -1,4 +1,3 @@
-import { useMemo, useState } from "react";
 import {
   Badge,
   Box,
@@ -15,14 +14,22 @@ import {
   Theme
 } from "@radix-ui/themes";
 import {
-  AvatarIcon,
   ChatBubbleIcon,
   GlobeIcon,
   LightningBoltIcon,
   MixerHorizontalIcon,
-  SpeakerOffIcon,
-  SpeakerLoudIcon
+  PersonIcon,
+  SpeakerLoudIcon,
+  SpeakerOffIcon
 } from "@radix-ui/react-icons";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  applyOutputDeviceSelection,
+  buildAudioDeviceState,
+  subscribeToAudioDeviceChanges,
+  SYSTEM_DEFAULT_DEVICE_ID,
+  type BrowserAudioDevice
+} from "./audioDevices";
 import { QuickAction } from "./components/QuickAction";
 import { SectionHeader } from "./components/SectionHeader";
 import { StatusChip } from "./components/StatusChip";
@@ -47,6 +54,90 @@ export function App() {
   const platformLabel = typeof window !== "undefined" && window.app
     ? window.app.platform
     : "web";
+  const mediaDevices = typeof navigator !== "undefined"
+    ? navigator.mediaDevices
+    : undefined;
+  const [enumeratedDevices, setEnumeratedDevices] = useState<BrowserAudioDevice[]>([]);
+  const [selectedInputId, setSelectedInputId] = useState(SYSTEM_DEFAULT_DEVICE_ID);
+  const [selectedOutputId, setSelectedOutputId] = useState(SYSTEM_DEFAULT_DEVICE_ID);
+  const [audioError, setAudioError] = useState<string | null>(null);
+  const [isRefreshingDevices, setIsRefreshingDevices] = useState(false);
+  const [outputRoutingReady, setOutputRoutingReady] = useState(false);
+  const outputPreviewRef = useRef<HTMLAudioElement>(null);
+  const audioDevices = useMemo(() => buildAudioDeviceState(
+    enumeratedDevices,
+    {
+      inputId: selectedInputId,
+      outputId: selectedOutputId
+    },
+    {
+      supported: Boolean(mediaDevices?.enumerateDevices),
+      error: mediaDevices?.enumerateDevices
+        ? audioError
+        : "Audio device APIs are unavailable in this runtime."
+    }
+  ), [audioError, enumeratedDevices, mediaDevices?.enumerateDevices, selectedInputId, selectedOutputId]);
+
+  const refreshAudioDevices = useCallback(async () => {
+    if (!mediaDevices?.enumerateDevices) {
+      return;
+    }
+
+    setIsRefreshingDevices(true);
+
+    try {
+      const devices = await mediaDevices.enumerateDevices();
+      setEnumeratedDevices(devices);
+      setAudioError(null);
+    } catch (error) {
+      setAudioError(error instanceof Error ? error.message : "Unable to refresh audio devices.");
+    } finally {
+      setIsRefreshingDevices(false);
+    }
+  }, [mediaDevices]);
+
+  useEffect(() => {
+    void refreshAudioDevices();
+
+    if (!mediaDevices?.enumerateDevices) {
+      return undefined;
+    }
+
+    return subscribeToAudioDeviceChanges(mediaDevices, refreshAudioDevices);
+  }, [mediaDevices, refreshAudioDevices]);
+
+  useEffect(() => {
+    if (audioDevices.selectedInputId !== selectedInputId) {
+      setSelectedInputId(audioDevices.selectedInputId);
+    }
+
+    if (audioDevices.selectedOutputId !== selectedOutputId) {
+      setSelectedOutputId(audioDevices.selectedOutputId);
+    }
+  }, [audioDevices.selectedInputId, audioDevices.selectedOutputId, selectedInputId, selectedOutputId]);
+
+  useEffect(() => {
+    let active = true;
+
+    const syncOutputRoute = async () => {
+      try {
+        const applied = await applyOutputDeviceSelection(outputPreviewRef.current, audioDevices.selectedOutputId);
+        if (active) {
+          setOutputRoutingReady(applied);
+        }
+      } catch {
+        if (active) {
+          setOutputRoutingReady(false);
+        }
+      }
+    };
+
+    void syncOutputRoute();
+
+    return () => {
+      active = false;
+    };
+  }, [audioDevices.selectedOutputId]);
   const secureTransportLabel = useMemo(() => {
     if (handshakeState === "running") {
       return "handshake running";
@@ -86,6 +177,7 @@ export function App() {
     <Theme accentColor="cyan" grayColor="slate" radius="large" scaling="105%">
       <Box className="subtle-grid" style={{ minHeight: "100vh" }}>
         <main>
+          <audio ref={outputPreviewRef} preload="none" />
           <Flex direction="column" gap="6">
             <Card className="hero-card fade-in">
               <Flex direction={{ initial: "column", md: "row" }} gap="5" align="start">
@@ -123,25 +215,74 @@ export function App() {
                 </Box>
                 <Card className="section-card" style={{ minWidth: 260 }}>
                   <Flex direction="column" gap="3">
-                    <SectionHeader title="Live mixer" subtitle="Inputs + spatial layers" />
+                    <SectionHeader title="Audio devices" subtitle="Hot-swap aware routing" />
+                    <Flex align="center" justify="between" gap="3" wrap="wrap">
+                      <Badge size="2" variant="outline">
+                        {audioDevices.detectedInputCount} inputs · {audioDevices.detectedOutputCount} outputs
+                      </Badge>
+                      <Button
+                        size="2"
+                        variant="soft"
+                        onClick={() => {
+                          void refreshAudioDevices();
+                        }}
+                        disabled={!audioDevices.supported || isRefreshingDevices}
+                      >
+                        {isRefreshingDevices ? "Refreshing…" : "Refresh"}
+                      </Button>
+                    </Flex>
                     <Flex direction="column" gap="2">
-                      <Flex align="center" justify="between">
-                        <Text>Mic capture</Text>
-                        <Switch defaultChecked />
-                      </Flex>
-                      <Flex align="center" justify="between">
-                        <Text>Noise gate</Text>
-                        <Switch defaultChecked />
-                      </Flex>
-                      <Flex align="center" justify="between">
-                        <Text>Duck game audio</Text>
-                        <Switch />
-                      </Flex>
+                      <label className="device-field">
+                        <Text size="2" color="gray">Input device</Text>
+                        <select
+                          className="device-select"
+                          value={audioDevices.selectedInputId}
+                          onChange={(event) => {
+                            setSelectedInputId(event.target.value);
+                          }}
+                          disabled={!audioDevices.supported}
+                        >
+                          {audioDevices.inputs.map((device) => (
+                            <option key={device.id} value={device.id}>
+                              {device.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="device-field">
+                        <Text size="2" color="gray">Output device</Text>
+                        <select
+                          className="device-select"
+                          value={audioDevices.selectedOutputId}
+                          onChange={(event) => {
+                            setSelectedOutputId(event.target.value);
+                          }}
+                          disabled={!audioDevices.supported}
+                        >
+                          {audioDevices.outputs.map((device) => (
+                            <option key={device.id} value={device.id}>
+                              {device.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
                     </Flex>
                     <Separator size="4" />
-                    <Flex align="center" justify="between">
-                      <Text size="2" color="gray">Preset</Text>
-                      <Badge size="2" variant="outline">Studio clarity</Badge>
+                    <Flex direction="column" gap="1">
+                      <Text size="2" color="gray">
+                        Capture route: {audioDevices.inputRoute.resolvedLabel}
+                      </Text>
+                      <Text size="2" color="gray">
+                        Playback route: {audioDevices.outputRoute.resolvedLabel}
+                      </Text>
+                      <Text size="2" color="gray">
+                        {outputRoutingReady
+                          ? "Notification audio follows the selected output device."
+                          : "Output routing is tracked and will be applied when sink switching is supported."}
+                      </Text>
+                      {audioDevices.error ? (
+                        <Text size="2" color="ruby">{audioDevices.error}</Text>
+                      ) : null}
                     </Flex>
                   </Flex>
                 </Card>
@@ -166,7 +307,7 @@ export function App() {
                               placeItems: "center"
                             }}
                           >
-                            <AvatarIcon />
+                            <PersonIcon />
                           </Box>
                           <Text size="3">{user.name}</Text>
                         </Flex>
@@ -216,44 +357,44 @@ export function App() {
               </Card>
 
               <Card className="section-card fade-in delay-3">
-                  <Flex direction="column" gap="4">
-                    <SectionHeader title="Secure transport" subtitle="Authenticated handshake + encrypted UDP" />
-                    <Text size="2" color="gray">
-                      The Electron shell can now run an authenticated voice self-test that derives fresh
-                      session keys and encrypts a UDP voice round trip end-to-end.
-                    </Text>
-                    <Flex direction="column" gap="2">
-                      <Flex gap="3" wrap="wrap">
-                        <Button
-                          variant="solid"
-                          onClick={() => {
-                            void runSelfTest();
-                          }}
-                          disabled={!window.app?.runSecureVoiceSelfTest || handshakeState === "running"}
-                        >
-                          {handshakeState === "running" ? "Running secure self-test…" : "Run auth self-test"}
-                        </Button>
-                        <Button variant="soft" disabled>
-                          {window.app?.runSecureVoiceSelfTest ? "Electron transport available" : "Open in Electron to test"}
-                        </Button>
-                      </Flex>
-                      {selfTestResult ? (
-                        <Card className="section-card">
-                          <Flex direction="column" gap="2">
-                            <Text size="2" color="gray">Session ID</Text>
-                            <Text size="2">{selfTestResult.sessionId}</Text>
-                            <Text size="2" color="gray">Echoed payload</Text>
-                            <Text size="2">{selfTestResult.echoedPayload}</Text>
-                            <Text size="2" color="gray">{selfTestResult.cipherSuite}</Text>
-                          </Flex>
-                        </Card>
-                      ) : null}
-                      {selfTestError ? (
-                        <Text size="2" color="ruby">{selfTestError}</Text>
-                      ) : null}
+                <Flex direction="column" gap="4">
+                  <SectionHeader title="Secure transport" subtitle="Authenticated handshake + encrypted UDP" />
+                  <Text size="2" color="gray">
+                    The Electron shell can now run an authenticated voice self-test that derives fresh
+                    session keys and encrypts a UDP voice round trip end-to-end.
+                  </Text>
+                  <Flex direction="column" gap="2">
+                    <Flex gap="3" wrap="wrap">
+                      <Button
+                        variant="solid"
+                        onClick={() => {
+                          void runSelfTest();
+                        }}
+                        disabled={!window.app?.runSecureVoiceSelfTest || handshakeState === "running"}
+                      >
+                        {handshakeState === "running" ? "Running secure self-test…" : "Run auth self-test"}
+                      </Button>
+                      <Button variant="soft" disabled>
+                        {window.app?.runSecureVoiceSelfTest ? "Electron transport available" : "Open in Electron to test"}
+                      </Button>
                     </Flex>
+                    {selfTestResult ? (
+                      <Card className="section-card">
+                        <Flex direction="column" gap="2">
+                          <Text size="2" color="gray">Session ID</Text>
+                          <Text size="2">{selfTestResult.sessionId}</Text>
+                          <Text size="2" color="gray">Echoed payload</Text>
+                          <Text size="2">{selfTestResult.echoedPayload}</Text>
+                          <Text size="2" color="gray">{selfTestResult.cipherSuite}</Text>
+                        </Flex>
+                      </Card>
+                    ) : null}
+                    {selfTestError ? (
+                      <Text size="2" color="ruby">{selfTestError}</Text>
+                    ) : null}
                   </Flex>
-                </Card>
+                </Flex>
+              </Card>
             </Grid>
           </Flex>
         </main>
