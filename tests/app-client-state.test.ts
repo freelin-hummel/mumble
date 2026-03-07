@@ -189,6 +189,7 @@ test("AppClientStore syncs a stable channel tree with participant presence and p
     { id: "guest", channelId: "root", status: "idle", isSelf: undefined },
     { id: "self", channelId: "games", status: "live", isSelf: true }
   ]);
+  assert.equal(state.participants.some((participant) => participant.id === "ghost"), false);
   assert.equal(state.activeChannelId, "games");
 });
 

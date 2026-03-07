@@ -200,6 +200,9 @@ const normalizeChannelPermissions = (
   move: typeof permissions?.move === "boolean" ? permissions.move : fallback.move,
   write: typeof permissions?.write === "boolean" ? permissions.write : fallback.write
 });
+const resolveChannelPermissionsFallback = (channel?: AppClientChannelSnapshot | null) => (
+  channel?.permissions ?? defaultChannelPermissions
+);
 
 const resolveActiveChannelId = (
   channels: AppClientChannel[],
@@ -230,6 +233,8 @@ const resolveActiveChannelId = (
   return null;
 };
 
+// Build a stable, depth-annotated channel list ordered by position/name/id while
+// recovering gracefully from invalid parent links or cycles by re-rooting leftovers.
 const sortChannelsIntoTree = (channels: AppClientChannel[]) => {
   const childLookup = new Map<string | null, AppClientChannel[]>();
   const compareChannels = (left: AppClientChannel, right: AppClientChannel) => (
@@ -288,6 +293,9 @@ const sortChannelsIntoTree = (channels: AppClientChannel[]) => {
   return orderedChannels;
 };
 
+// Normalize live session payloads into renderer-safe state by validating channel
+// references, ordering the tree, filtering participants in missing rooms, and
+// choosing the best active channel that the UI can still enter.
 const normalizeSessionState = (
   channels: AppClientChannelSnapshot[],
   participants: AppClientParticipantSnapshot[],
@@ -347,8 +355,8 @@ const normalizeSessionState = (
     })
     .filter((participant): participant is AppClientParticipant => participant !== null)
     .sort((left, right) => (
-      (orderedChannelIds.get(left.channelId) ?? Number.MAX_SAFE_INTEGER)
-        - (orderedChannelIds.get(right.channelId) ?? Number.MAX_SAFE_INTEGER)
+      (orderedChannelIds.get(left.channelId) ?? -1)
+        - (orderedChannelIds.get(right.channelId) ?? -1)
       || Number(Boolean(right.isSelf)) - Number(Boolean(left.isSelf))
       || compareText(left.name, right.name)
       || compareText(left.id, right.id)
@@ -661,7 +669,7 @@ export class AppClientStore {
         name: typeof channel.name === "string" ? channel.name : currentChannel?.name ?? normalizedChannelId,
         parentId: channel.parentId !== undefined ? channel.parentId : currentChannel?.parentId ?? null,
         position: channel.position ?? currentChannel?.position ?? 0,
-        permissions: normalizeChannelPermissions(channel.permissions, currentChannel?.permissions ?? defaultChannelPermissions)
+        permissions: normalizeChannelPermissions(channel.permissions, resolveChannelPermissionsFallback(currentChannel))
       });
 
       const normalizedSessionState = normalizeSessionState(
@@ -789,7 +797,7 @@ export class AppClientStore {
           channel.id === normalizedChannelId
             ? {
               ...toChannelSnapshot(channel),
-              permissions: normalizeChannelPermissions(permissions, channel.permissions)
+              permissions: normalizeChannelPermissions(permissions, resolveChannelPermissionsFallback(channel))
             }
             : toChannelSnapshot(channel)
         )),

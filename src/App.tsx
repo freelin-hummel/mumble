@@ -18,6 +18,7 @@ import {
   GlobeIcon,
   LightningBoltIcon,
   MixerHorizontalIcon,
+  PersonIcon,
   SpeakerLoudIcon,
   SpeakerOffIcon
 } from "@radix-ui/react-icons";
@@ -1052,7 +1053,7 @@ export function App() {
                   <SectionHeader
                     title="Channels"
                     subtitle={activeChannel
-                      ? `Active room: ${activeChannel.name}${activeChannel.permissions.enter ? "" : " · no entry"}`
+                      ? `Active room: ${activeChannel.name}${!activeChannel.permissions.enter ? " · no entry" : ""}`
                       : "Join a server to browse rooms"}
                   />
                   {appState.channels.length > 0 ? (
@@ -1072,7 +1073,7 @@ export function App() {
                             disabled={!channel.permissions.enter}
                           >
                             <Flex align="center" justify="between" width="100%" gap="3">
-                              <Flex align="center" gap="2" style={{ paddingLeft: `${channel.depth * 16}px` }}>
+                              <Flex align="center" gap="2" style={{ paddingLeft: `${channel.depth}rem` }}>
                                 <span>{channel.name}</span>
                                 {!channel.permissions.enter ? (
                                   <Text as="span" size="1" color="gray">Locked</Text>
