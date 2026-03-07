@@ -2,12 +2,44 @@ import { app, BrowserWindow, ipcMain } from "electron";
 import { fileURLToPath } from "node:url";
 import { registerAppStateIpc } from "./appStateIpc.js";
 import { runSecureVoiceSelfTest } from "./secureVoice.js";
+import {
+  createSecureWebPreferences,
+  CSP_VIOLATION_CHANNEL,
+  formatCspViolation,
+  validateSecureWebPreferences,
+  withContentSecurityPolicy
+} from "./security.js";
 import { registerVoiceTransportIpc, shutdownVoiceTransport } from "./voiceTransportIpc.js";
 
 let mainWindow: BrowserWindow | null = null;
 let isShuttingDown = false;
+let isContentSecurityPolicyInstalled = false;
+
+const installContentSecurityPolicy = (window: BrowserWindow) => {
+  if (isContentSecurityPolicyInstalled) {
+    return;
+  }
+
+  window.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+    if (details.resourceType !== "mainFrame") {
+      callback({ responseHeaders: details.responseHeaders });
+      return;
+    }
+
+    callback({
+      responseHeaders: withContentSecurityPolicy(details.responseHeaders)
+    });
+  });
+
+  isContentSecurityPolicyInstalled = true;
+};
 
 const createWindow = () => {
+  const webPreferences = createSecureWebPreferences(
+    fileURLToPath(new URL("../preload/preload.mjs", import.meta.url))
+  );
+  validateSecureWebPreferences(webPreferences);
+
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -16,12 +48,10 @@ const createWindow = () => {
     backgroundColor: "#0d0f14",
     show: false,
     titleBarStyle: "hiddenInset",
-    webPreferences: {
-      preload: fileURLToPath(new URL("../preload/preload.mjs", import.meta.url)),
-      contextIsolation: true,
-      nodeIntegration: false
-    }
+    webPreferences
   });
+
+  installContentSecurityPolicy(mainWindow);
 
   mainWindow.once("ready-to-show", () => {
     mainWindow?.show();
@@ -38,6 +68,10 @@ const createWindow = () => {
 
 app.whenReady().then(() => {
   ipcMain.handle("voice:run-self-test", () => runSecureVoiceSelfTest());
+  ipcMain.removeAllListeners(CSP_VIOLATION_CHANNEL);
+  ipcMain.on(CSP_VIOLATION_CHANNEL, (_event, payload) => {
+    console.warn(formatCspViolation(payload));
+  });
   registerAppStateIpc();
   registerVoiceTransportIpc();
   createWindow();
