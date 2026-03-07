@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Badge,
   Box,
@@ -25,6 +26,7 @@ import {
 import { QuickAction } from "./components/QuickAction";
 import { SectionHeader } from "./components/SectionHeader";
 import { StatusChip } from "./components/StatusChip";
+import { dspFeatures, loadDspPipeline, setDspFeature } from "./dspPipeline.mjs";
 
 const channelUsers = [
   { name: "Aster", status: "live" },
@@ -43,6 +45,7 @@ export function App() {
   const platformLabel = typeof window !== "undefined" && window.app
     ? window.app.platform
     : "web";
+  const [dspPipeline, setDspPipelineState] = useState(() => loadDspPipeline());
 
   return (
     <Theme accentColor="cyan" grayColor="slate" radius="large" scaling="105%">
@@ -154,9 +157,34 @@ export function App() {
                     ))}
                   </Grid>
                   <Separator size="4" />
-                  <Flex align="center" justify="between">
-                    <Text size="2" color="gray">Adaptive gain</Text>
-                    <Switch defaultChecked />
+                  <Flex direction="column" gap="3">
+                    {dspFeatures.map((feature) => (
+                      <Flex key={feature.key} align="center" justify="between" gap="3">
+                        <Box style={{ flex: 1 }}>
+                          <Text size="2">{feature.label}</Text>
+                          <Text size="1" color="gray">{feature.description}</Text>
+                        </Box>
+                        <Switch
+                          checked={dspPipeline.settings[feature.key]}
+                          onCheckedChange={(enabled) => {
+                            setDspPipelineState((currentPipeline) => (
+                              setDspFeature(currentPipeline.settings, feature.key, enabled)
+                            ));
+                          }}
+                        />
+                      </Flex>
+                    ))}
+                  </Flex>
+                  <Separator size="4" />
+                  <Flex align="start" justify="between" gap="3">
+                    <Text size="2" color="gray">Pipeline status</Text>
+                    <Flex gap="2" wrap="wrap" justify="end">
+                      {dspPipeline.isBypassed
+                        ? <Badge size="2" variant="soft" color="gray">Bypassed</Badge>
+                        : dspPipeline.activeStages.map((stage) => (
+                          <Badge key={stage} size="2" variant="outline">{stage}</Badge>
+                        ))}
+                    </Flex>
                   </Flex>
                 </Flex>
               </Card>
