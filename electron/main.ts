@@ -1,12 +1,8 @@
 import { app, BrowserWindow, ipcMain } from "electron";
-import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { registerAppStateIpc } from "./appStateIpc.js";
 import { runSecureVoiceSelfTest } from "./secureVoice.js";
 import { registerVoiceTransportIpc, shutdownVoiceTransport } from "./voiceTransportIpc.js";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 let mainWindow: BrowserWindow | null = null;
 let isShuttingDown = false;
@@ -21,7 +17,7 @@ const createWindow = () => {
     show: false,
     titleBarStyle: "hiddenInset",
     webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
+      preload: fileURLToPath(new URL("../preload/preload.mjs", import.meta.url)),
       contextIsolation: true,
       nodeIntegration: false
     }
@@ -31,12 +27,12 @@ const createWindow = () => {
     mainWindow?.show();
   });
 
-  const devServerUrl = process.env.VITE_DEV_SERVER_URL;
+  const devServerUrl = process.env.VITE_DEV_SERVER_URL ?? process.env.ELECTRON_RENDERER_URL;
   if (devServerUrl) {
     mainWindow.loadURL(devServerUrl);
     mainWindow.webContents.openDevTools({ mode: "detach" });
   } else {
-    mainWindow.loadFile(path.join(__dirname, "../renderer/index.html"));
+    mainWindow.loadFile(fileURLToPath(new URL("../renderer/index.html", import.meta.url)));
   }
 };
 
