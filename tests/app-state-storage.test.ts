@@ -49,6 +49,7 @@ test("desktop settings persist across restart via the app state storage file", a
       notificationsEnabled: false,
       showLatencyDetails: true
     });
+    firstRunStore.rememberServer("stage.example.test:64738");
     await firstRunStore.connect({
       serverAddress: "voice.example.test:64738",
       nickname: "Scout"
@@ -62,7 +63,10 @@ test("desktop settings persist across restart via the app state storage file", a
     const restartedState = secondRunStore.getState();
     assert.equal(restartedState.connection.serverAddress, "voice.example.test:64738");
     assert.equal(restartedState.connection.nickname, "Scout");
-    assert.deepEqual(restartedState.recentServers, ["voice.example.test:64738"]);
+    assert.deepEqual(restartedState.recentServers, [
+      "voice.example.test:64738",
+      "stage.example.test:64738"
+    ]);
     assert.deepEqual(restartedState.audio, {
       inputDeviceId: "usb-mic",
       outputDeviceId: "usb-headset",

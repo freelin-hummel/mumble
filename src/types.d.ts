@@ -131,6 +131,7 @@ declare global {
       runSecureVoiceSelfTest?: () => Promise<SecureVoiceSelfTestResult>;
       getState?: () => Promise<AppClientState>;
       connect?: (options: { serverAddress: string; nickname: string }) => Promise<AppClientState>;
+      rememberServer?: (serverAddress: string) => Promise<AppClientState>;
       disconnect?: () => Promise<AppClientState>;
       selectChannel?: (channelId: string) => Promise<AppClientState>;
       sendChatMessage?: (body: string) => Promise<AppClientState>;

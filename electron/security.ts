@@ -17,6 +17,7 @@ export const APP_API_WHITELIST = Object.freeze([
   "runSecureVoiceSelfTest",
   "getState",
   "connect",
+  "rememberServer",
   "disconnect",
   "selectChannel",
   "sendChatMessage",
@@ -39,6 +40,7 @@ export const APP_INVOKE_CHANNELS = Object.freeze({
   runSecureVoiceSelfTest: "voice:run-self-test",
   getState: "app:get-state",
   connect: "app:connect",
+  rememberServer: "app:remember-server",
   disconnect: "app:disconnect",
   selectChannel: "app:select-channel",
   sendChatMessage: "app:send-chat-message",
@@ -101,6 +103,7 @@ export type PreloadAppApi = Readonly<{
   runSecureVoiceSelfTest: () => Promise<unknown>;
   getState: () => Promise<AppClientState>;
   connect: (options: { serverAddress: string; nickname: string }) => Promise<AppClientState>;
+  rememberServer: (serverAddress: string) => Promise<AppClientState>;
   disconnect: () => Promise<AppClientState>;
   selectChannel: (channelId: string) => Promise<AppClientState>;
   sendChatMessage: (body: string) => Promise<AppClientState>;
@@ -203,6 +206,7 @@ export const createPreloadApi = (
     runSecureVoiceSelfTest: () => invoke(ipcRenderer, APP_INVOKE_CHANNELS.runSecureVoiceSelfTest),
     getState: () => invoke(ipcRenderer, APP_INVOKE_CHANNELS.getState),
     connect: (options) => invoke(ipcRenderer, APP_INVOKE_CHANNELS.connect, options),
+    rememberServer: (serverAddress) => invoke(ipcRenderer, APP_INVOKE_CHANNELS.rememberServer, serverAddress),
     disconnect: () => invoke(ipcRenderer, APP_INVOKE_CHANNELS.disconnect),
     selectChannel: (channelId) => invoke(ipcRenderer, APP_INVOKE_CHANNELS.selectChannel, channelId),
     sendChatMessage: (body) => invoke(ipcRenderer, APP_INVOKE_CHANNELS.sendChatMessage, body),

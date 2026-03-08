@@ -58,6 +58,7 @@ test("preload exposes only the whitelisted app and voice APIs", () => {
   void preloadApi.app.runSecureVoiceSelfTest();
   void preloadApi.app.getState();
   void preloadApi.app.connect({ serverAddress: "voice.example.test:64738", nickname: "Scout" });
+  void preloadApi.app.rememberServer("stage.example.test:64738");
   void preloadApi.app.disconnect();
   void preloadApi.app.selectChannel("lobby");
   void preloadApi.app.sendChatMessage("Ready to roll");
@@ -83,6 +84,7 @@ test("preload exposes only the whitelisted app and voice APIs", () => {
       APP_INVOKE_CHANNELS.runSecureVoiceSelfTest,
       APP_INVOKE_CHANNELS.getState,
       APP_INVOKE_CHANNELS.connect,
+      APP_INVOKE_CHANNELS.rememberServer,
       APP_INVOKE_CHANNELS.disconnect,
       APP_INVOKE_CHANNELS.selectChannel,
       APP_INVOKE_CHANNELS.sendChatMessage,

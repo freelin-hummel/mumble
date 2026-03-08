@@ -101,6 +101,7 @@ const startTestServerSession = (nickname: string) => {
 export const registerAppStateIpc = () => {
   ipcMain.removeHandler("app:get-state");
   ipcMain.removeHandler("app:connect");
+  ipcMain.removeHandler("app:remember-server");
   ipcMain.removeHandler("app:disconnect");
   ipcMain.removeHandler("app:select-channel");
   ipcMain.removeHandler("app:send-chat-message");
@@ -114,6 +115,7 @@ export const registerAppStateIpc = () => {
     startTestServerSession(nextState.connection.nickname);
     return getStore().getState();
   });
+  ipcMain.handle("app:remember-server", (_event, serverAddress: string) => getStore().rememberServer(serverAddress));
   ipcMain.handle("app:disconnect", () => {
     clearLiveSessionTimers();
     return getStore().disconnect();

@@ -23,8 +23,8 @@ test("parity review summary matches the grouped screen inventory", () => {
 
   assert.deepEqual(summary, {
     totalLegacyScreens: 40,
-    partiallyCoveredLegacyScreens: 13,
-    missingLegacyScreens: 27,
+    partiallyCoveredLegacyScreens: 14,
+    missingLegacyScreens: 26,
     fullyImplementedLegacyScreens: 0,
     featureGroups: 6
   });

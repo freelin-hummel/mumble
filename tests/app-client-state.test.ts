@@ -75,6 +75,22 @@ test("AppClientStore connect preserves an empty live session until real data arr
   assert.equal(persistedStates.length >= 2, true);
 });
 
+test("AppClientStore can remember a server draft without connecting", () => {
+  const store = new AppClientStore({
+    waitForConnection: async () => {}
+  });
+
+  const nextState = store.rememberServer("  stage.example.test:64738  ");
+  store.rememberServer("voice.example.test:64738");
+  store.rememberServer("stage.example.test:64738");
+
+  assert.equal(nextState.connection.serverAddress, "stage.example.test:64738");
+  assert.deepEqual(store.getState().recentServers, [
+    "stage.example.test:64738",
+    "voice.example.test:64738"
+  ]);
+});
+
 test("AppClientStore rejects invalid connection input and preserves error state", async () => {
   const store = new AppClientStore({
     waitForConnection: async () => {}

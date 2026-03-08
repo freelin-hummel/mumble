@@ -315,6 +315,35 @@ export function App() {
     }));
   }, [updateLocalAppState]);
 
+  const rememberServer = useCallback(async (nextServerAddress: string) => {
+    const normalizedServerAddress = nextServerAddress.trim();
+    if (normalizedServerAddress.length === 0) {
+      return;
+    }
+
+    if (window.app?.rememberServer) {
+      const nextState = await window.app.rememberServer(normalizedServerAddress);
+      setAppState(nextState);
+      setServerAddress(nextState.connection.serverAddress);
+      return;
+    }
+
+    updateLocalAppState((currentState) => ({
+      ...currentState,
+      connection: {
+        ...currentState.connection,
+        serverAddress: normalizedServerAddress
+      },
+      recentServers: buildRecentServers(currentState.recentServers, normalizedServerAddress)
+    }));
+    setServerAddress(normalizedServerAddress);
+  }, [updateLocalAppState]);
+
+  const loadRecentServer = useCallback((recentServer: string) => {
+    setServerAddress(recentServer);
+    setFormError(null);
+  }, []);
+
   useEffect(() => {
     audioSettingsRef.current = {
       captureEnabled: appState.audio.captureEnabled,
@@ -1023,6 +1052,7 @@ export function App() {
     persistDspSettings(settings);
     setDspPipelineState(createDspPipeline(settings));
   };
+  const trimmedServerAddress = serverAddress.trim();
 
   return (
     <Theme accentColor="cyan" grayColor="slate" radius="large" scaling="105%">
@@ -1087,6 +1117,17 @@ export function App() {
                         </Button>
                         <Button
                           size="3"
+                          variant="outline"
+                          type="button"
+                          onClick={() => {
+                            void rememberServer(serverAddress);
+                          }}
+                          disabled={appState.connection.status === "connecting" || trimmedServerAddress.length === 0}
+                        >
+                          Save server
+                        </Button>
+                        <Button
+                          size="3"
                           variant="soft"
                           type="button"
                           onClick={() => {
@@ -1097,6 +1138,27 @@ export function App() {
                           Disconnect
                         </Button>
                       </Flex>
+                      {appState.recentServers.length > 0 ? (
+                        <Flex gap="2" align="center" wrap="wrap" style={{ marginTop: 12 }}>
+                          <Text size="2" color="gray">
+                            Saved servers
+                          </Text>
+                          {appState.recentServers.map((recentServer) => (
+                            <Button
+                              key={recentServer}
+                              size="1"
+                              variant={trimmedServerAddress === recentServer ? "solid" : "soft"}
+                              type="button"
+                              onClick={() => {
+                                loadRecentServer(recentServer);
+                              }}
+                              disabled={appState.connection.status === "connecting"}
+                            >
+                              {recentServer}
+                            </Button>
+                          ))}
+                        </Flex>
+                      ) : null}
                     </form>
                     <Flex gap="3" align="center" wrap="wrap">
                       <StatusChip
