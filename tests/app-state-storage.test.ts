@@ -79,6 +79,7 @@ test("desktop settings persist across restart via the app state storage file", a
       pushToTalk: true,
       pushToTalkShortcut: "KeyV",
       shortcutBindings: [{ target: "toggleMute", shortcut: "KeyM" }],
+      localNicknames: {},
       autoReconnect: false,
       notificationsEnabled: false,
       showLatencyDetails: true
@@ -129,6 +130,7 @@ test("loadPersistedAppClientState migrates legacy settings files without losing 
         pushToTalk: true,
         pushToTalkShortcut: "KeyV",
         shortcutBindings: [{ target: "toggleLatencyDetails", shortcut: "KeyL" }],
+        localNicknames: {},
         autoReconnect: false,
         notificationsEnabled: false,
         showLatencyDetails: true

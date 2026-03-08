@@ -60,6 +60,7 @@ export type AppClientPreferences = {
   pushToTalk: boolean;
   pushToTalkShortcut: string;
   shortcutBindings: AppClientShortcutBinding[];
+  localNicknames: Record<string, string>;
   autoReconnect: boolean;
   notificationsEnabled: boolean;
   showLatencyDetails: boolean;
@@ -180,6 +181,7 @@ const defaultPreferences = Object.freeze<AppClientPreferences>({
   pushToTalk: false,
   pushToTalkShortcut: DEFAULT_PUSH_TO_TALK_SHORTCUT,
   shortcutBindings: [],
+  localNicknames: {},
   autoReconnect: true,
   notificationsEnabled: true,
   showLatencyDetails: false
@@ -444,6 +446,23 @@ const isRecord = (value: unknown): value is Record<string, unknown> => (
   typeof value === "object" && value !== null
 );
 
+const normalizeLocalNicknames = (value: unknown): Record<string, string> => {
+  if (!isRecord(value)) {
+    return {};
+  }
+
+  return Object.entries(value).reduce<Record<string, string>>((nicknames, [participantId, nickname]) => {
+    const normalizedParticipantId = normalizeId(participantId);
+    const normalizedNickname = typeof nickname === "string" ? nickname.trim() : "";
+    if (!normalizedParticipantId || normalizedNickname.length === 0) {
+      return nicknames;
+    }
+
+    nicknames[normalizedParticipantId] = normalizedNickname;
+    return nicknames;
+  }, {});
+};
+
 const normalizeAudioSettings = (audio?: Partial<AppClientAudioSettings> | null): AppClientAudioSettings => ({
   inputDeviceId: typeof audio?.inputDeviceId === "string" && audio.inputDeviceId.length > 0
     ? audio.inputDeviceId
@@ -471,6 +490,7 @@ const normalizePreferences = (preferences?: Partial<AppClientPreferences> | null
     : defaultPreferences.pushToTalk,
   pushToTalkShortcut: normalizePushToTalkShortcut(preferences?.pushToTalkShortcut),
   shortcutBindings: normalizeShortcutBindings(preferences?.shortcutBindings),
+  localNicknames: normalizeLocalNicknames(preferences?.localNicknames),
   autoReconnect: typeof preferences?.autoReconnect === "boolean"
     ? preferences.autoReconnect
     : defaultPreferences.autoReconnect,

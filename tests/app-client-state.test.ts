@@ -25,6 +25,9 @@ test("AppClientStore hydrates persisted desktop preferences", () => {
         pushToTalk: true,
         pushToTalkShortcut: "KeyV",
         shortcutBindings: [{ target: "toggleMute", shortcut: "m" }],
+        localNicknames: {
+          atlas: "Lead"
+        },
         autoReconnect: false,
         notificationsEnabled: false,
         showLatencyDetails: true
@@ -42,6 +45,7 @@ test("AppClientStore hydrates persisted desktop preferences", () => {
   assert.equal(state.audio.outputDeviceId, "usb-headset");
   assert.equal(state.preferences.pushToTalkShortcut, "KeyV");
   assert.deepEqual(state.preferences.shortcutBindings, [{ target: "toggleMute", shortcut: "KeyM" }]);
+  assert.deepEqual(state.preferences.localNicknames, { atlas: "Lead" });
   assert.equal(state.preferences.showLatencyDetails, true);
 });
 
@@ -134,6 +138,12 @@ test("AppClientStore normalizes invalid push-to-talk shortcuts back to the defau
           { target: "toggleLatencyDetails", shortcut: "l" },
           { target: "invalid", shortcut: "KeyQ" }
         ],
+        localNicknames: {
+          "  atlas  ": "  Lead  ",
+          echo: "",
+          "": "Ghost",
+          nova: 42
+        },
         autoReconnect: true,
         notificationsEnabled: true,
         showLatencyDetails: false
@@ -147,6 +157,9 @@ test("AppClientStore normalizes invalid push-to-talk shortcuts back to the defau
     { target: "toggleMute", shortcut: "KeyM" },
     { target: "toggleLatencyDetails", shortcut: "KeyL" }
   ]);
+  assert.deepEqual(store.getState().preferences.localNicknames, {
+    atlas: "Lead"
+  });
   assert.equal(store.updatePreferences({ pushToTalkShortcut: "m" }).preferences.pushToTalkShortcut, "KeyM");
 });
 
@@ -167,6 +180,9 @@ test("migratePersistedAppClientState upgrades legacy desktop settings snapshots 
       pushToTalk: true,
       pushToTalkShortcut: "v",
       shortcutBindings: [{ target: "cycleChannel", shortcut: "r" }],
+      localNicknames: {
+        atlas: "Lead"
+      },
       autoReconnect: false,
       notificationsEnabled: false,
       showLatencyDetails: true
@@ -190,6 +206,9 @@ test("migratePersistedAppClientState upgrades legacy desktop settings snapshots 
       pushToTalk: true,
       pushToTalkShortcut: "KeyV",
       shortcutBindings: [{ target: "cycleChannel", shortcut: "KeyR" }],
+      localNicknames: {
+        atlas: "Lead"
+      },
       autoReconnect: false,
       notificationsEnabled: false,
       showLatencyDetails: true
@@ -213,7 +232,10 @@ test("AppClientStore persists versioned settings snapshots", () => {
   store.updatePreferences({
     pushToTalk: true,
     pushToTalkShortcut: "KeyV",
-    shortcutBindings: [{ target: "toggleMute", shortcut: "KeyM" }]
+    shortcutBindings: [{ target: "toggleMute", shortcut: "KeyM" }],
+    localNicknames: {
+      atlas: "Lead"
+    }
   });
 
   assert.deepEqual(persistedStates.at(-1), {
@@ -233,10 +255,43 @@ test("AppClientStore persists versioned settings snapshots", () => {
       pushToTalk: true,
       pushToTalkShortcut: "KeyV",
       shortcutBindings: [{ target: "toggleMute", shortcut: "KeyM" }],
+      localNicknames: {
+        atlas: "Lead"
+      },
       autoReconnect: true,
       notificationsEnabled: true,
       showLatencyDetails: false
     }
+  });
+});
+
+test("AppClientStore updates and clears persisted local nicknames", () => {
+  const store = new AppClientStore({
+    persistedState: {
+      preferences: {
+        localNicknames: {
+          atlas: "Lead"
+        }
+      }
+    },
+    waitForConnection: async () => {}
+  });
+
+  assert.deepEqual(store.updatePreferences({
+    localNicknames: {
+      atlas: "Lead",
+      echo: "Anchor"
+    }
+  }).preferences.localNicknames, {
+    atlas: "Lead",
+    echo: "Anchor"
+  });
+  assert.deepEqual(store.updatePreferences({
+    localNicknames: {
+      echo: "Anchor"
+    }
+  }).preferences.localNicknames, {
+    echo: "Anchor"
   });
 });
 
