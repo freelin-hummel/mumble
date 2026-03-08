@@ -6,6 +6,7 @@ import {
   type AppClientAudioSettings,
   type AppClientConnectRequest,
   type AppClientPreferences,
+  type AppClientSendChatMessageRequest,
   type PersistedAppClientState,
   type AppClientState
 } from "./appClientState.js";
@@ -121,7 +122,10 @@ export const registerAppStateIpc = () => {
     return getStore().disconnect();
   });
   ipcMain.handle("app:select-channel", (_event, channelId: string) => getStore().selectChannel(channelId));
-  ipcMain.handle("app:send-chat-message", (_event, body: string) => getStore().sendChatMessage(body));
+  ipcMain.handle(
+    "app:send-chat-message",
+    (_event, request: AppClientSendChatMessageRequest) => getStore().sendChatMessage(request)
+  );
   ipcMain.handle("app:update-audio", (_event, audio: Partial<AppClientAudioSettings>) => (
     getStore().updateAudioSettings(audio)
   ));

@@ -54,7 +54,9 @@ declare global {
     author: string;
     body: string;
     channelId: string | null;
+    participantId?: string;
     sentAt: string;
+    severity?: "error";
     isSelf?: boolean;
   }
 
@@ -135,7 +137,7 @@ declare global {
       rememberServer?: (serverAddress: string) => Promise<AppClientState>;
       disconnect?: () => Promise<AppClientState>;
       selectChannel?: (channelId: string) => Promise<AppClientState>;
-      sendChatMessage?: (body: string) => Promise<AppClientState>;
+      sendChatMessage?: (request: { body: string; channelId?: string | null; participantId?: string | null }) => Promise<AppClientState>;
       updateAudioSettings?: (audio: Partial<AppClientAudioSettings>) => Promise<AppClientState>;
       updatePreferences?: (preferences: Partial<AppClientPreferences>) => Promise<AppClientState>;
       exportDiagnostics?: (snapshot?: RendererDiagnosticsSnapshot) => Promise<DiagnosticsExportResult>;

@@ -59,6 +59,12 @@ import {
   shortcutFromKeyboardEvent,
   stepVoiceActivation
 } from "./voiceActivation";
+import {
+  getChatMessagesForTarget,
+  getChatTargetKey,
+  getChatViewTarget,
+  getUnreadCountForTarget
+} from "./chatState";
 import { createTestServerSessions } from "./testServerSession.js";
 
 const fallbackAppState: AppClientState = {
@@ -257,6 +263,7 @@ export function App() {
   const [meteringError, setMeteringError] = useState<string | null>(null);
   const [pushToTalkPressed, setPushToTalkPressed] = useState(false);
   const [selectedParticipantId, setSelectedParticipantId] = useState<string | null>(null);
+  const [readChatMessageIdsByTarget, setReadChatMessageIdsByTarget] = useState<Record<string, string[]>>({});
   const [participantNicknameDraft, setParticipantNicknameDraft] = useState("");
   const outputPreviewRef = useRef<HTMLAudioElement>(null);
   const diagnosticsSectionRef = useRef<HTMLDivElement>(null);
@@ -756,12 +763,6 @@ export function App() {
     () => appState.participants.filter((participant) => participant.channelId === appState.activeChannelId),
     [appState.activeChannelId, appState.participants]
   );
-  const activeMessages = useMemo(
-    () => appState.messages.filter((message) => (
-      message.channelId === null || message.channelId === appState.activeChannelId
-    )),
-    [appState.activeChannelId, appState.messages]
-  );
   const selectedParticipant = useMemo(
     () => appState.participants.find((participant) => participant.id === selectedParticipantId) ?? null,
     [appState.participants, selectedParticipantId]
@@ -771,6 +772,18 @@ export function App() {
       ? appState.channels.find((channel) => channel.id === selectedParticipant.channelId) ?? null
       : null,
     [appState.channels, selectedParticipant]
+  );
+  const chatTarget = useMemo(
+    () => getChatViewTarget(appState, selectedParticipantId),
+    [appState, selectedParticipantId]
+  );
+  const activeMessages = useMemo(
+    () => getChatMessagesForTarget(appState.messages, chatTarget),
+    [appState.messages, chatTarget]
+  );
+  const activeChatTargetKey = useMemo(
+    () => getChatTargetKey(chatTarget),
+    [chatTarget]
   );
   const connectionError = formError ?? appState.connection.error;
   const connectionServerAddress = serverAddress.trim() || appState.connection.serverAddress;
@@ -820,6 +833,27 @@ export function App() {
 
     setParticipantNicknameDraft(localNicknames[selectedParticipant.id] ?? "");
   }, [localNicknames, selectedParticipant]);
+
+  useEffect(() => {
+    const nextReadMessageIds = activeMessages
+      .filter((message) => !message.isSelf)
+      .map((message) => message.id);
+
+    setReadChatMessageIdsByTarget((currentState) => {
+      const currentReadMessageIds = currentState[activeChatTargetKey] ?? [];
+      if (
+        currentReadMessageIds.length === nextReadMessageIds.length
+        && currentReadMessageIds.every((messageId, index) => messageId === nextReadMessageIds[index])
+      ) {
+        return currentState;
+      }
+
+      return {
+        ...currentState,
+        [activeChatTargetKey]: nextReadMessageIds
+      };
+    });
+  }, [activeChatTargetKey, activeMessages]);
 
   const connectToServer = async () => {
     const normalizedServerAddress = serverAddress.trim();
@@ -1010,8 +1044,8 @@ export function App() {
           mode: voiceActivation.mode,
           isTransmitting: voiceActivation.isTransmitting,
           meteringError,
-          availableInputDevices: audioDevices.input.length,
-          availableOutputDevices: audioDevices.output.length,
+          availableInputDevices: audioDevices.inputs.length,
+          availableOutputDevices: audioDevices.outputs.length,
           outputRoutingReady
         }
       });
@@ -1085,9 +1119,13 @@ export function App() {
 
     setFormError(null);
 
+    const chatRequest = chatTarget.type === "participant"
+      ? { body: chatDraft, participantId: chatTarget.participantId }
+      : { body: chatDraft, channelId: chatTarget.channelId };
+
     if (window.app?.sendChatMessage) {
       try {
-        const nextState = await window.app.sendChatMessage(chatDraft);
+        const nextState = await window.app.sendChatMessage(chatRequest);
         setAppState(nextState);
         setChatDraft("");
       } catch (error) {
@@ -1097,7 +1135,7 @@ export function App() {
     }
 
     try {
-      updateLocalAppState((currentState) => appendLocalChatMessageState(currentState, chatDraft));
+      updateLocalAppState((currentState) => appendLocalChatMessageState(currentState, chatRequest));
       setChatDraft("");
     } catch (error) {
       setFormError(error instanceof Error ? error.message : "Unable to send chat.");
@@ -1123,6 +1161,22 @@ export function App() {
     setDspPipelineState(createDspPipeline(settings));
   };
   const trimmedServerAddress = serverAddress.trim();
+  const selectedParticipantDisplayName = selectedParticipant
+    ? getParticipantDisplayName(selectedParticipant, localNicknames)
+    : null;
+  const chatSubtitle = chatTarget.type === "participant" && selectedParticipantDisplayName
+    ? `Direct messages with ${selectedParticipantDisplayName}`
+    : activeChannel
+      ? `Messages in ${activeChannel.name}`
+      : "Basic room chat";
+  const chatPlaceholder = chatTarget.type === "participant" && selectedParticipantDisplayName
+    ? `Message ${selectedParticipantDisplayName} privately`
+    : activeChannel
+      ? `Message ${activeChannel.name}`
+      : "Message the active room";
+  const canSendChat = appState.connection.status === "connected" && (
+    chatTarget.type === "participant" || chatTarget.channelId !== null
+  );
 
   return (
     <Theme accentColor="cyan" grayColor="slate" radius="large" scaling="105%">
@@ -1494,6 +1548,11 @@ export function App() {
                       {appState.channels.map((channel) => {
                         const participantCount = channel.participantIds.length;
                         const isActive = channel.id === appState.activeChannelId;
+                        const unreadCount = getUnreadCountForTarget(
+                          appState.messages,
+                          { type: "channel", channelId: channel.id },
+                          readChatMessageIdsByTarget[getChatTargetKey({ type: "channel", channelId: channel.id })]
+                        );
                         return (
                           <Button
                             key={channel.id}
@@ -1516,6 +1575,11 @@ export function App() {
                                 ) : null}
                                 {channel.permissions.enter && !channel.permissions.speak ? (
                                   <Text as="span" size="1" color="gray">Listen only</Text>
+                                ) : null}
+                                {!isActive && unreadCount > 0 ? (
+                                  <Badge size="1" color="orange" variant="soft">
+                                    {unreadCount} new
+                                  </Badge>
                                 ) : null}
                               </Flex>
                               <span>{participantCount}</span>
@@ -1542,45 +1606,59 @@ export function App() {
                   />
                   {activeParticipants.length > 0 ? (
                     <Flex direction="column" gap="3">
-                      {activeParticipants.map((participant) => (
-                        <Button
-                          key={participant.id}
-                          type="button"
-                          variant={selectedParticipantId === participant.id ? "soft" : "ghost"}
-                          onClick={() => {
-                            setSelectedParticipantId(participant.id);
-                            setFormError(null);
-                          }}
-                          style={{ justifyContent: "space-between", width: "100%", height: "auto", padding: 0 }}
-                        >
-                          <Flex align="center" justify="between" style={{ width: "100%", padding: "6px 0" }}>
-                            <Flex align="center" gap="3">
-                              <Box
-                                style={{
-                                  width: 38,
-                                  height: 38,
-                                  borderRadius: 12,
-                                  background: "rgba(255,255,255,0.08)",
-                                  display: "grid",
-                                  placeItems: "center"
-                                }}
-                              >
-                                <PersonIcon />
-                              </Box>
-                              <Box>
-                                <Text size="3">{getParticipantDisplayName(participant, localNicknames)}</Text>
-                                <Flex align="center" gap="2" wrap="wrap">
-                                  {localNicknames[participant.id] ? (
-                                    <Text size="1" color="gray">Server name: {participant.name}</Text>
-                                  ) : null}
-                                  {participant.isSelf ? <Text size="1" color="gray">You</Text> : null}
-                                </Flex>
-                              </Box>
+                      {activeParticipants.map((participant) => {
+                        const unreadCount = participant.isSelf
+                          ? 0
+                          : getUnreadCountForTarget(
+                            appState.messages,
+                            { type: "participant", participantId: participant.id },
+                            readChatMessageIdsByTarget[getChatTargetKey({ type: "participant", participantId: participant.id })]
+                          );
+                        return (
+                          <Button
+                            key={participant.id}
+                            type="button"
+                            variant={selectedParticipantId === participant.id ? "soft" : "ghost"}
+                            onClick={() => {
+                              setSelectedParticipantId(participant.id);
+                              setFormError(null);
+                            }}
+                            style={{ justifyContent: "space-between", width: "100%", height: "auto", padding: 0 }}
+                          >
+                            <Flex align="center" justify="between" style={{ width: "100%", padding: "6px 0" }}>
+                              <Flex align="center" gap="3">
+                                <Box
+                                  style={{
+                                    width: 38,
+                                    height: 38,
+                                    borderRadius: 12,
+                                    background: "rgba(255,255,255,0.08)",
+                                    display: "grid",
+                                    placeItems: "center"
+                                  }}
+                                >
+                                  <PersonIcon />
+                                </Box>
+                                <Box>
+                                  <Text size="3">{getParticipantDisplayName(participant, localNicknames)}</Text>
+                                  <Flex align="center" gap="2" wrap="wrap">
+                                    {localNicknames[participant.id] ? (
+                                      <Text size="1" color="gray">Server name: {participant.name}</Text>
+                                    ) : null}
+                                    {participant.isSelf ? <Text size="1" color="gray">You</Text> : null}
+                                    {!participant.isSelf && unreadCount > 0 ? (
+                                      <Badge size="1" color="orange" variant="soft">
+                                        {unreadCount} new
+                                      </Badge>
+                                    ) : null}
+                                  </Flex>
+                                </Box>
+                              </Flex>
+                              <StatusChip status={participant.status} label={participant.status} />
                             </Flex>
-                            <StatusChip status={participant.status} label={participant.status} />
-                          </Flex>
-                        </Button>
-                      ))}
+                          </Button>
+                        );
+                      })}
                     </Flex>
                   ) : (
                     <Text size="2" color="gray">
@@ -1679,7 +1757,7 @@ export function App() {
                 <Flex direction="column" gap="4">
                   <SectionHeader
                     title="Chat"
-                    subtitle={activeChannel ? `Messages in ${activeChannel.name}` : "Basic room chat"}
+                    subtitle={chatSubtitle}
                   />
                   {activeMessages.length > 0 ? (
                     <Flex direction="column" gap="3" style={{ maxHeight: 280, overflowY: "auto", paddingRight: 4 }}>
@@ -1690,12 +1768,31 @@ export function App() {
                               <Flex align="center" gap="2">
                                 <Text size="2" weight="bold">{message.author}</Text>
                                 {message.isSelf ? <Badge size="1" variant="soft">You</Badge> : null}
+                                {message.participantId ? (
+                                  <Badge size="1" color="violet" variant="soft">Direct</Badge>
+                                ) : null}
+                                {message.severity === "error" ? (
+                                  <Badge size="1" color="ruby" variant="soft">Error</Badge>
+                                ) : null}
                               </Flex>
                               <Text size="1" color="gray">{formatChatTimestamp(message.sentAt)}</Text>
                             </Flex>
-                            <Text size="2">{message.body}</Text>
-                            {message.channelId === null ? (
-                              <Text size="1" color="gray">Server notice</Text>
+                            <Text size="2" color={message.severity === "error" ? "ruby" : undefined}>
+                              {message.body}
+                            </Text>
+                            {message.participantId ? (
+                              <Text size="1" color="gray">
+                                Direct message
+                              </Text>
+                            ) : message.channelId === null ? (
+                              <Text size="1" color={message.severity === "error" ? "ruby" : "gray"}>
+                                {message.severity === "error" ? "Server error" : "Server notice"}
+                              </Text>
+                            ) : null}
+                            {message.participantId && selectedParticipantDisplayName && chatTarget.type === "participant" ? (
+                              <Text size="1" color="gray">
+                                Conversation with {selectedParticipantDisplayName}
+                              </Text>
                             ) : null}
                           </Flex>
                         </Card>
@@ -1716,22 +1813,27 @@ export function App() {
                   >
                     <Flex direction={{ initial: "column", sm: "row" }} gap="3">
                       <TextField.Root
-                        placeholder={activeChannel ? `Message ${activeChannel.name}` : "Message the active room"}
+                        placeholder={chatPlaceholder}
                         value={chatDraft}
                         onChange={(event) => {
                           setChatDraft(event.target.value);
                         }}
-                        disabled={appState.connection.status !== "connected"}
+                        disabled={!canSendChat}
                         style={{ flex: 1 }}
                       >
                         <TextField.Slot>
                           <ChatBubbleIcon />
                         </TextField.Slot>
                       </TextField.Root>
-                      <Button type="submit" disabled={appState.connection.status !== "connected"}>
+                      <Button type="submit" disabled={!canSendChat}>
                         Send
                       </Button>
                     </Flex>
+                    {chatTarget.type === "participant" && selectedParticipantDisplayName ? (
+                      <Text size="1" color="gray">
+                        Private replies go to {selectedParticipantDisplayName}. Clear the participant selection to return to room chat.
+                      </Text>
+                    ) : null}
                   </form>
                 </Flex>
               </Card>

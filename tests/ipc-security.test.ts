@@ -61,7 +61,7 @@ test("preload exposes only the whitelisted app and voice APIs", () => {
   void preloadApi.app.rememberServer("stage.example.test:64738");
   void preloadApi.app.disconnect();
   void preloadApi.app.selectChannel("lobby");
-  void preloadApi.app.sendChatMessage("Ready to roll");
+  void preloadApi.app.sendChatMessage({ body: "Ready to roll", channelId: "lobby" });
   void preloadApi.app.updateAudioSettings({ inputGain: 120 });
   void preloadApi.app.updatePreferences({ autoReconnect: false });
   void preloadApi.app.exportDiagnostics();

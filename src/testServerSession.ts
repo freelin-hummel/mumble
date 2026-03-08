@@ -31,6 +31,13 @@ const createBaseMessages = (nickname: string): AppClientChatMessage[] => [
     sentAt: "2026-03-07T22:00:00.000Z"
   },
   {
+    id: "permissions",
+    author: "Server",
+    body: "Text chat is enabled for the Lobby and direct replies.",
+    channelId: null,
+    sentAt: "2026-03-07T22:00:03.000Z"
+  },
+  {
     id: "lobby-checkin",
     author: "Atlas",
     body: "Lobby comms check.",
@@ -76,6 +83,14 @@ export const createTestServerSessions = (nickname: string): ScheduledLiveSession
             body: "Joining Lobby now.",
             channelId: "lobby",
             sentAt: "2026-03-07T22:00:12.000Z"
+          },
+          {
+            id: "atlas-dm",
+            author: "Atlas",
+            body: "Ping me directly before you move to Squad Room.",
+            channelId: null,
+            participantId: "atlas",
+            sentAt: "2026-03-07T22:00:15.000Z"
           }
         ],
         telemetry: {
@@ -111,6 +126,14 @@ export const createTestServerSessions = (nickname: string): ScheduledLiveSession
             body: "Moving over to Squad Room for strategy chat.",
             channelId: "squad",
             sentAt: "2026-03-07T22:00:20.000Z"
+          },
+          {
+            id: "message-rate-limit",
+            author: "Server",
+            body: "Server notice: message delivery may be delayed while permissions refresh.",
+            channelId: null,
+            severity: "error",
+            sentAt: "2026-03-07T22:00:24.000Z"
           }
         ],
         telemetry: {
