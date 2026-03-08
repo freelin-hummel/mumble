@@ -17,6 +17,12 @@ export type RendererDiagnosticsSnapshot = {
     mode: string;
     isTransmitting: boolean;
     meteringError: string | null;
+    playbackError?: string | null;
+    transportState?: string;
+    averageRoundTripMs?: number | null;
+    packetsSent?: number | null;
+    packetsReceived?: number | null;
+    packetLoss?: number | null;
     availableInputDevices: number;
     availableOutputDevices: number;
     outputRoutingReady: boolean;

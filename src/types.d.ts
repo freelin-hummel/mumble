@@ -15,6 +15,13 @@ declare global {
     lastError: string | null;
     lastSentAt: number | null;
     lastReceivedAt: number | null;
+    transportMode?: "udp" | "secure-loopback";
+    sessionId?: string | null;
+    cipherSuite?: string | null;
+    packetsSent?: number;
+    packetsReceived?: number;
+    packetLoss?: number | null;
+    averageRoundTripMs?: number | null;
   }
 
   interface VoiceTransportPacket {
@@ -47,6 +54,11 @@ declare global {
     channelId: string;
     status: "live" | "muted" | "idle";
     isSelf?: boolean;
+    isMuted?: boolean;
+    isDeafened?: boolean;
+    isSelfMuted?: boolean;
+    isSelfDeafened?: boolean;
+    isSuppressed?: boolean;
   }
 
   interface AppClientChatMessage {
@@ -54,7 +66,9 @@ declare global {
     author: string;
     body: string;
     channelId: string | null;
+    participantId?: string;
     sentAt: string;
+    severity?: "error";
     isSelf?: boolean;
   }
 
@@ -69,17 +83,34 @@ declare global {
 
   interface AppClientShortcutBinding {
     shortcut: string;
-    target: "toggleMute" | "selectSystemOutput" | "toggleLatencyDetails" | "cycleChannel";
+    target:
+      | "toggleMute"
+      | "selectSystemOutput"
+      | "toggleLatencyDetails"
+      | "cycleChannel";
+  }
+
+  interface AppClientFavoriteServer {
+    address: string;
+    label: string;
+  }
+
+  interface AppClientVoiceProcessingSettings {
+    agc: boolean;
+    noiseSuppression: boolean;
+    echoCancellation: boolean;
   }
 
   interface AppClientPreferences {
     pushToTalk: boolean;
     pushToTalkShortcut: string;
     shortcutBindings: AppClientShortcutBinding[];
+    favoriteServers: AppClientFavoriteServer[];
     localNicknames: Record<string, string>;
     autoReconnect: boolean;
     notificationsEnabled: boolean;
     showLatencyDetails: boolean;
+    voiceProcessing: AppClientVoiceProcessingSettings;
   }
 
   interface AppClientTelemetry {
@@ -89,7 +120,12 @@ declare global {
   }
 
   interface AppClientConnectionState {
-    status: "disconnected" | "connecting" | "authenticating" | "connected" | "error";
+    status:
+      | "disconnected"
+      | "connecting"
+      | "authenticating"
+      | "connected"
+      | "error";
     serverAddress: string;
     nickname: string;
     error: string | null;
@@ -114,6 +150,12 @@ declare global {
       mode: string;
       isTransmitting: boolean;
       meteringError: string | null;
+      playbackError?: string | null;
+      transportState?: string;
+      averageRoundTripMs?: number | null;
+      packetsSent?: number | null;
+      packetsReceived?: number | null;
+      packetLoss?: number | null;
       availableInputDevices: number;
       availableOutputDevices: number;
       outputRoutingReady: boolean;
@@ -131,23 +173,48 @@ declare global {
       platform: NodeJS.Platform;
       runSecureVoiceSelfTest?: () => Promise<SecureVoiceSelfTestResult>;
       getState?: () => Promise<AppClientState>;
-      connect?: (options: { serverAddress: string; nickname: string }) => Promise<AppClientState>;
+      connect?: (options: {
+        serverAddress: string;
+        nickname: string;
+      }) => Promise<AppClientState>;
       rememberServer?: (serverAddress: string) => Promise<AppClientState>;
       disconnect?: () => Promise<AppClientState>;
       selectChannel?: (channelId: string) => Promise<AppClientState>;
-      sendChatMessage?: (body: string) => Promise<AppClientState>;
-      updateAudioSettings?: (audio: Partial<AppClientAudioSettings>) => Promise<AppClientState>;
-      updatePreferences?: (preferences: Partial<AppClientPreferences>) => Promise<AppClientState>;
-      exportDiagnostics?: (snapshot?: RendererDiagnosticsSnapshot) => Promise<DiagnosticsExportResult>;
-      onStateChanged?: (listener: (state: AppClientState) => void) => () => void;
+      joinChannel?: (channelId: string) => Promise<AppClientState>;
+      sendChatMessage?: (request: {
+        body: string;
+        channelId?: string | null;
+        participantId?: string | null;
+      }) => Promise<AppClientState>;
+      updateAudioSettings?: (
+        audio: Partial<AppClientAudioSettings>,
+      ) => Promise<AppClientState>;
+      updatePreferences?: (
+        preferences: Partial<AppClientPreferences>,
+      ) => Promise<AppClientState>;
+      exportDiagnostics?: (
+        snapshot?: RendererDiagnosticsSnapshot,
+      ) => Promise<DiagnosticsExportResult>;
+      onStateChanged?: (
+        listener: (state: AppClientState) => void,
+      ) => () => void;
     };
     voice?: {
-      connect: (options: { host: string; port: number; bindAddress?: string; bindPort?: number }) => Promise<VoiceTransportStatus>;
+      connect: (options: {
+        host: string;
+        port: number;
+        bindAddress?: string;
+        bindPort?: number;
+      }) => Promise<VoiceTransportStatus>;
       send: (payload: ArrayBuffer | ArrayBufferView) => Promise<number>;
       disconnect: () => Promise<VoiceTransportStatus>;
       getStatus: () => Promise<VoiceTransportStatus>;
-      onMessage: (listener: (packet: VoiceTransportPacket) => void) => () => void;
-      onStatus: (listener: (status: VoiceTransportStatus) => void) => () => void;
+      onMessage: (
+        listener: (packet: VoiceTransportPacket) => void,
+      ) => () => void;
+      onStatus: (
+        listener: (status: VoiceTransportStatus) => void,
+      ) => () => void;
     };
   }
 }

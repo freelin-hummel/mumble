@@ -36,6 +36,12 @@ export type AudioDeviceSelections = {
   outputId?: string;
 };
 
+export type AudioProcessingConstraints = {
+  agc?: boolean;
+  noiseSuppression?: boolean;
+  echoCancellation?: boolean;
+};
+
 export type MediaDevicesLike = Pick<MediaDevices, "enumerateDevices" | "addEventListener" | "removeEventListener">;
 
 type OutputSinkTarget = {
@@ -82,12 +88,29 @@ export function buildAudioDeviceState(
   };
 }
 
-export function createInputDeviceConstraints(selectedInputId: string): MediaTrackConstraints | true {
+export function createInputDeviceConstraints(
+  selectedInputId: string,
+  audioProcessing: AudioProcessingConstraints = {}
+): MediaTrackConstraints | true {
+  const baseConstraints: MediaTrackConstraints = {};
+  if (typeof audioProcessing.agc === "boolean") {
+    baseConstraints.autoGainControl = audioProcessing.agc;
+  }
+  if (typeof audioProcessing.noiseSuppression === "boolean") {
+    baseConstraints.noiseSuppression = audioProcessing.noiseSuppression;
+  }
+  if (typeof audioProcessing.echoCancellation === "boolean") {
+    baseConstraints.echoCancellation = audioProcessing.echoCancellation;
+  }
+
   if (selectedInputId === SYSTEM_DEFAULT_DEVICE_ID) {
-    return true;
+    return Object.values(baseConstraints).some((value) => typeof value === "boolean")
+      ? baseConstraints
+      : true;
   }
 
   return {
+    ...baseConstraints,
     deviceId: {
       exact: selectedInputId
     }

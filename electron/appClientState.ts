@@ -36,6 +36,11 @@ export type AppClientParticipant = {
   channelId: string;
   status: AppClientParticipantStatus;
   isSelf?: boolean;
+  isMuted?: boolean;
+  isDeafened?: boolean;
+  isSelfMuted?: boolean;
+  isSelfDeafened?: boolean;
+  isSuppressed?: boolean;
 };
 
 export type AppClientChatMessage = {
@@ -43,7 +48,9 @@ export type AppClientChatMessage = {
   author: string;
   body: string;
   channelId: string | null;
+  participantId?: string;
   sentAt: string;
+  severity?: "error";
   isSelf?: boolean;
 };
 
@@ -56,14 +63,27 @@ export type AppClientAudioSettings = {
   outputGain: number;
 };
 
+export type AppClientFavoriteServer = {
+  address: string;
+  label: string;
+};
+
+export type AppClientVoiceProcessingSettings = {
+  agc: boolean;
+  noiseSuppression: boolean;
+  echoCancellation: boolean;
+};
+
 export type AppClientPreferences = {
   pushToTalk: boolean;
   pushToTalkShortcut: string;
   shortcutBindings: AppClientShortcutBinding[];
+  favoriteServers: AppClientFavoriteServer[];
   localNicknames: Record<string, string>;
   autoReconnect: boolean;
   notificationsEnabled: boolean;
   showLatencyDetails: boolean;
+  voiceProcessing: AppClientVoiceProcessingSettings;
 };
 
 export type AppClientTelemetry = {
@@ -97,7 +117,7 @@ export type AppClientState = {
   recentServers: string[];
 };
 
-export const PERSISTED_APP_CLIENT_STATE_VERSION = 1;
+ export const PERSISTED_APP_CLIENT_STATE_VERSION = 2;
 
 export type PersistedAppClientState = {
   schemaVersion: typeof PERSISTED_APP_CLIENT_STATE_VERSION;
@@ -127,6 +147,12 @@ export type AppClientConnectRequest = {
   nickname: string;
 };
 
+export type AppClientSendChatMessageRequest = {
+  body: string;
+  channelId?: string | null;
+  participantId?: string | null;
+};
+
 export type AppClientChannelSnapshot = {
   id: string;
   name: string;
@@ -149,6 +175,11 @@ export type AppClientParticipantSnapshot = {
   channelId: string;
   status?: AppClientParticipantStatus;
   isSelf?: boolean;
+  isMuted?: boolean;
+  isDeafened?: boolean;
+  isSelfMuted?: boolean;
+  isSelfDeafened?: boolean;
+  isSuppressed?: boolean;
 };
 
 export type AppClientParticipantPatch = {
@@ -157,6 +188,11 @@ export type AppClientParticipantPatch = {
   channelId?: string;
   status?: AppClientParticipantStatus;
   isSelf?: boolean;
+  isMuted?: boolean;
+  isDeafened?: boolean;
+  isSelfMuted?: boolean;
+  isSelfDeafened?: boolean;
+  isSuppressed?: boolean;
 };
 
 export type AppClientSessionSnapshot = {
@@ -186,10 +222,16 @@ const defaultPreferences = Object.freeze<AppClientPreferences>({
   pushToTalk: false,
   pushToTalkShortcut: DEFAULT_PUSH_TO_TALK_SHORTCUT,
   shortcutBindings: [],
+  favoriteServers: [],
   localNicknames: {},
   autoReconnect: true,
   notificationsEnabled: true,
-  showLatencyDetails: false
+  showLatencyDetails: false,
+  voiceProcessing: {
+    agc: true,
+    noiseSuppression: true,
+    echoCancellation: false
+  }
 });
 
 const defaultTelemetry = Object.freeze<AppClientTelemetry>({
@@ -215,6 +257,7 @@ const cloneState = <T>(value: T): T => {
 
   return JSON.parse(JSON.stringify(value)) as T;
 };
+const isNonNull = <T>(value: T | null): value is T => value !== null;
 
 const clampGain = (value: number) => Math.min(150, Math.max(0, Math.round(value)));
 const compareText = (left: string, right: string) => left.localeCompare(right, undefined, {
@@ -224,6 +267,36 @@ const compareText = (left: string, right: string) => left.localeCompare(right, u
 const isParticipantStatus = (value: string): value is AppClientParticipantStatus => (
   value === "live" || value === "muted" || value === "idle"
 );
+const normalizeParticipantFlag = (value: boolean | null | undefined) => value || undefined;
+const normalizeParticipantState = (
+  participant: Pick<
+    AppClientParticipantSnapshot,
+    "status" | "isMuted" | "isDeafened" | "isSelfMuted" | "isSelfDeafened" | "isSuppressed"
+  >
+) => {
+  const isMuted = normalizeParticipantFlag(participant.isMuted);
+  const isDeafened = normalizeParticipantFlag(participant.isDeafened);
+  const isSelfMuted = normalizeParticipantFlag(participant.isSelfMuted);
+  const isSelfDeafened = normalizeParticipantFlag(participant.isSelfDeafened);
+  const isSuppressed = normalizeParticipantFlag(participant.isSuppressed);
+  const nextStatus = participant.status ?? (
+    isMuted || isDeafened || isSelfMuted || isSelfDeafened || isSuppressed
+      ? "muted"
+      : "idle"
+  );
+
+  return {
+    status: isParticipantStatus(nextStatus) ? nextStatus : "idle",
+    isMuted,
+    isDeafened,
+    isSelfMuted,
+    isSelfDeafened,
+    isSuppressed
+  } satisfies Pick<
+    AppClientParticipant,
+    "status" | "isMuted" | "isDeafened" | "isSelfMuted" | "isSelfDeafened" | "isSuppressed"
+  >;
+};
 const normalizeId = (value: string | null | undefined) => {
   if (typeof value !== "string") {
     return null;
@@ -234,7 +307,7 @@ const normalizeId = (value: string | null | undefined) => {
 };
 const normalizeChannelPermissions = (
   permissions?: Partial<AppClientChannelPermissions> | null,
-  fallback: AppClientChannelPermissions = defaultChannelPermissions
+  fallback: Partial<AppClientChannelPermissions> = defaultChannelPermissions
 ): AppClientChannelPermissions => ({
   traverse: typeof permissions?.traverse === "boolean" ? permissions.traverse : fallback.traverse,
   enter: typeof permissions?.enter === "boolean" ? permissions.enter : fallback.enter,
@@ -387,16 +460,16 @@ const normalizeSessionState = (
         return null;
       }
 
-      const nextStatus = participant.status ?? "idle";
+      const normalizedParticipantState = normalizeParticipantState(participant);
       return {
         id,
         name,
         channelId,
-        status: isParticipantStatus(nextStatus) ? nextStatus : "idle",
+        ...normalizedParticipantState,
         isSelf: participant.isSelf === true ? true : undefined
       } satisfies AppClientParticipant;
     })
-    .filter((participant): participant is AppClientParticipant => participant !== null)
+    .filter(isNonNull)
     .sort((left, right) => (
       (orderedChannelIds.get(left.channelId) ?? -1)
         - (orderedChannelIds.get(right.channelId) ?? -1)
@@ -444,7 +517,12 @@ const toParticipantSnapshot = (participant: AppClientParticipant): AppClientPart
   name: participant.name,
   channelId: participant.channelId,
   status: participant.status,
-  isSelf: participant.isSelf
+  isSelf: participant.isSelf,
+  isMuted: participant.isMuted,
+  isDeafened: participant.isDeafened,
+  isSelfMuted: participant.isSelfMuted,
+  isSelfDeafened: participant.isSelfDeafened,
+  isSuppressed: participant.isSuppressed
 });
 
 const isRecord = (value: unknown): value is Record<string, unknown> => (
@@ -466,6 +544,50 @@ const normalizeLocalNicknames = (value: unknown): Record<string, string> => {
     nicknames[normalizedParticipantId] = normalizedNickname;
     return nicknames;
   }, {});
+};
+
+const normalizeVoiceProcessingSettings = (
+  settings?: Partial<AppClientVoiceProcessingSettings> | null
+): AppClientVoiceProcessingSettings => ({
+  agc: typeof settings?.agc === "boolean"
+    ? settings.agc
+    : defaultPreferences.voiceProcessing.agc,
+  noiseSuppression: typeof settings?.noiseSuppression === "boolean"
+    ? settings.noiseSuppression
+    : defaultPreferences.voiceProcessing.noiseSuppression,
+  echoCancellation: typeof settings?.echoCancellation === "boolean"
+    ? settings.echoCancellation
+    : defaultPreferences.voiceProcessing.echoCancellation
+});
+
+const normalizeFavoriteServers = (favoriteServers?: unknown): AppClientFavoriteServer[] => {
+  if (!Array.isArray(favoriteServers)) {
+    return [];
+  }
+
+  const seenAddresses = new Set<string>();
+  const normalizedFavorites: AppClientFavoriteServer[] = [];
+
+  for (const favorite of favoriteServers) {
+    if (!isRecord(favorite) || typeof favorite.address !== "string") {
+      continue;
+    }
+
+    const normalizedAddress = favorite.address.trim();
+    if (normalizedAddress.length === 0 || seenAddresses.has(normalizedAddress)) {
+      continue;
+    }
+
+    seenAddresses.add(normalizedAddress);
+    normalizedFavorites.push({
+      address: normalizedAddress,
+      label: typeof favorite.label === "string" && favorite.label.trim().length > 0
+        ? favorite.label.trim()
+        : normalizedAddress
+    });
+  }
+
+  return normalizedFavorites.slice(0, 10);
 };
 
 const normalizeAudioSettings = (audio?: Partial<AppClientAudioSettings> | null): AppClientAudioSettings => ({
@@ -495,6 +617,7 @@ const normalizePreferences = (preferences?: Partial<AppClientPreferences> | null
     : defaultPreferences.pushToTalk,
   pushToTalkShortcut: normalizePushToTalkShortcut(preferences?.pushToTalkShortcut),
   shortcutBindings: normalizeShortcutBindings(preferences?.shortcutBindings),
+  favoriteServers: normalizeFavoriteServers(preferences?.favoriteServers),
   localNicknames: normalizeLocalNicknames(preferences?.localNicknames),
   autoReconnect: typeof preferences?.autoReconnect === "boolean"
     ? preferences.autoReconnect
@@ -504,7 +627,8 @@ const normalizePreferences = (preferences?: Partial<AppClientPreferences> | null
     : defaultPreferences.notificationsEnabled,
   showLatencyDetails: typeof preferences?.showLatencyDetails === "boolean"
     ? preferences.showLatencyDetails
-    : defaultPreferences.showLatencyDetails
+    : defaultPreferences.showLatencyDetails,
+  voiceProcessing: normalizeVoiceProcessingSettings(preferences?.voiceProcessing)
 });
 
 const normalizeRecentServers = (recentServers?: string[] | null) => {
@@ -529,7 +653,11 @@ export const migratePersistedAppClientState = (persistedState?: unknown | null):
   }
 
   const schemaVersion = persistedState.schemaVersion;
-  if (schemaVersion !== undefined && schemaVersion !== PERSISTED_APP_CLIENT_STATE_VERSION) {
+  if (
+    schemaVersion !== undefined
+    && schemaVersion !== 1
+    && schemaVersion !== PERSISTED_APP_CLIENT_STATE_VERSION
+  ) {
     return null;
   }
 
@@ -647,7 +775,8 @@ const normalizeChatMessageList = (messages: AppClientChatMessage[], channelIds: 
       return false;
     }
 
-    if (message.channelId !== null && !channelIds.has(message.channelId)) {
+    const normalizedChannelId = normalizeId(message.channelId);
+    if (normalizedChannelId !== null && !channelIds.has(normalizedChannelId)) {
       return false;
     }
 
@@ -657,8 +786,10 @@ const normalizeChatMessageList = (messages: AppClientChatMessage[], channelIds: 
     id: message.id,
     author: message.author.trim(),
     body: message.body.trim(),
-    channelId: message.channelId,
+    channelId: normalizeId(message.channelId),
+    ...(normalizeId(message.participantId) ? { participantId: normalizeId(message.participantId) ?? undefined } : {}),
     sentAt: Number.isNaN(Date.parse(message.sentAt)) ? new Date(0).toISOString() : message.sentAt,
+    ...(message.severity === "error" ? { severity: "error" as const } : {}),
     isSelf: message.isSelf === true ? true : undefined
   })).slice(-MAX_CHAT_MESSAGES);
 };
@@ -683,7 +814,10 @@ export const mergeLiveSessionState = (currentState: AppClientState, session: App
     currentState.activeChannelId
   );
   const channelIds = new Set(normalizedSessionState.channels.map((channel) => channel.id));
-  const messages = normalizeChatMessageList(session.messages ?? currentState.messages, channelIds);
+  const messages = normalizeChatMessageList([
+    ...currentState.messages,
+    ...(session.messages ?? [])
+  ], channelIds);
 
   return {
     ...currentState,
@@ -707,21 +841,57 @@ const buildLocalChatMessageId = () => {
   return `chat-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 };
 
-export const appendLocalChatMessageState = (currentState: AppClientState, body: string): AppClientState => {
-  if (currentState.connection.status !== "connected") {
-    throw new Error("Join a server before sending chat.");
-  }
+const resolveSendChatRequest = (
+  currentState: AppClientState,
+  request: string | AppClientSendChatMessageRequest
+) => {
+  const payload = typeof request === "string"
+    ? { body: request, channelId: currentState.activeChannelId }
+    : request;
+  const normalizedBody = payload.body.trim();
+  const normalizedParticipantId = normalizeId(payload.participantId);
+  const normalizedChannelId = normalizedParticipantId === null
+    ? normalizeId(payload.channelId ?? currentState.activeChannelId)
+    : null;
 
-  const normalizedBody = body.trim();
   if (!normalizedBody) {
     throw new Error("Enter a message before sending.");
   }
 
+  if (normalizedParticipantId !== null) {
+    const participant = currentState.participants.find((entry) => entry.id === normalizedParticipantId);
+    if (!participant || participant.isSelf) {
+      throw new Error("Choose someone else in the session before sending a direct message.");
+    }
+  } else if (normalizedChannelId === null) {
+    throw new Error("Choose a room before sending chat.");
+  } else if (!currentState.channels.some((channel) => channel.id === normalizedChannelId)) {
+    throw new Error("Choose a room that is still available before sending chat.");
+  }
+
+  return {
+    body: normalizedBody,
+    channelId: normalizedChannelId,
+    participantId: normalizedParticipantId
+  };
+};
+
+export const appendLocalChatMessageState = (
+  currentState: AppClientState,
+  request: string | AppClientSendChatMessageRequest
+): AppClientState => {
+  if (currentState.connection.status !== "connected") {
+    throw new Error("Join a server before sending chat.");
+  }
+
+  const normalizedRequest = resolveSendChatRequest(currentState, request);
+
   const nextMessage: AppClientChatMessage = {
     id: buildLocalChatMessageId(),
     author: currentState.connection.nickname || "You",
-    body: normalizedBody,
-    channelId: currentState.activeChannelId,
+    body: normalizedRequest.body,
+    channelId: normalizedRequest.channelId,
+    ...(normalizedRequest.participantId ? { participantId: normalizedRequest.participantId } : {}),
     sentAt: new Date().toISOString(),
     isSelf: true
   };
@@ -1011,14 +1181,21 @@ export class AppClientStore {
         return currentState;
       }
 
-      const nextStatus = participant.status ?? currentParticipant?.status ?? "idle";
+      const normalizedParticipantState = normalizeParticipantState({
+        status: participant.status ?? currentParticipant?.status,
+        isMuted: participant.isMuted ?? currentParticipant?.isMuted,
+        isDeafened: participant.isDeafened ?? currentParticipant?.isDeafened,
+        isSelfMuted: participant.isSelfMuted ?? currentParticipant?.isSelfMuted,
+        isSelfDeafened: participant.isSelfDeafened ?? currentParticipant?.isSelfDeafened,
+        isSuppressed: participant.isSuppressed ?? currentParticipant?.isSuppressed
+      });
       nextParticipants.set(normalizedParticipantId, {
         id: normalizedParticipantId,
         name: typeof participant.name === "string"
           ? participant.name
           : currentParticipant?.name ?? normalizedParticipantId,
         channelId: normalizedChannelId,
-        status: isParticipantStatus(nextStatus) ? nextStatus : "idle",
+        ...normalizedParticipantState,
         isSelf: participant.isSelf ?? currentParticipant?.isSelf
       });
 
@@ -1096,6 +1273,52 @@ export class AppClientStore {
     return this.getState();
   }
 
+  public joinChannel(channelId: string) {
+    this.updateState((currentState) => {
+      if (currentState.connection.status !== "connected") {
+        return currentState;
+      }
+
+      const nextChannel = currentState.channels.find((channel) => channel.id === channelId);
+      if (!nextChannel || !nextChannel.permissions.enter) {
+        return currentState;
+      }
+
+      const selfParticipant = currentState.participants.find((participant) => participant.isSelf);
+      if (!selfParticipant) {
+        return {
+          ...currentState,
+          activeChannelId: nextChannel.id
+        };
+      }
+
+      const normalizedSessionState = normalizeSessionState(
+        currentState.channels.map(toChannelSnapshot),
+        currentState.participants.map((participant) => (
+          participant.id === selfParticipant.id
+            ? {
+              ...toParticipantSnapshot(participant),
+              channelId: nextChannel.id
+            }
+            : toParticipantSnapshot(participant)
+        )),
+        nextChannel.id,
+        currentState.activeChannelId
+      );
+
+      return {
+        ...currentState,
+        channels: normalizedSessionState.channels,
+        participants: normalizedSessionState.participants,
+        activeChannelId: normalizedSessionState.activeChannelId
+      };
+    });
+    this.log("info", "channel.joined", {
+      channelId
+    });
+    return this.getState();
+  }
+
   public updateAudioSettings(audio: Partial<AppClientAudioSettings>) {
     this.updateState((currentState) => ({
       ...currentState,
@@ -1127,8 +1350,8 @@ export class AppClientStore {
     return this.getState();
   }
 
-  public sendChatMessage(body: string) {
-    this.updateState((currentState) => appendLocalChatMessageState(currentState, body));
+  public sendChatMessage(request: string | AppClientSendChatMessageRequest) {
+    this.updateState((currentState) => appendLocalChatMessageState(currentState, request));
     return this.getState();
   }
 

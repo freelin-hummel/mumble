@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   AppClientStore,
   PERSISTED_APP_CLIENT_STATE_VERSION,
+  mergeLiveSessionState,
   migratePersistedAppClientState
 } from "../electron/appClientState.js";
 
@@ -25,12 +26,18 @@ test("AppClientStore hydrates persisted desktop preferences", () => {
         pushToTalk: true,
         pushToTalkShortcut: "KeyV",
         shortcutBindings: [{ target: "toggleMute", shortcut: "m" }],
+        favoriteServers: [{ address: "voice.example.test:64738", label: "voice.example.test:64738" }],
         localNicknames: {
           atlas: "Lead"
         },
         autoReconnect: false,
         notificationsEnabled: false,
-        showLatencyDetails: true
+        showLatencyDetails: true,
+        voiceProcessing: {
+          agc: false,
+          noiseSuppression: false,
+          echoCancellation: true
+        }
       }
     },
     waitForConnection: async () => {}
@@ -45,8 +52,16 @@ test("AppClientStore hydrates persisted desktop preferences", () => {
   assert.equal(state.audio.outputDeviceId, "usb-headset");
   assert.equal(state.preferences.pushToTalkShortcut, "KeyV");
   assert.deepEqual(state.preferences.shortcutBindings, [{ target: "toggleMute", shortcut: "KeyM" }]);
+  assert.deepEqual(state.preferences.favoriteServers, [
+    { address: "voice.example.test:64738", label: "voice.example.test:64738" }
+  ]);
   assert.deepEqual(state.preferences.localNicknames, { atlas: "Lead" });
   assert.equal(state.preferences.showLatencyDetails, true);
+  assert.deepEqual(state.preferences.voiceProcessing, {
+    agc: false,
+    noiseSuppression: false,
+    echoCancellation: true
+  });
 });
 
 test("AppClientStore connect preserves an empty live session until real data arrives", async () => {
@@ -163,6 +178,12 @@ test("AppClientStore normalizes invalid push-to-talk shortcuts back to the defau
           { target: "toggleLatencyDetails", shortcut: "l" },
           { target: "invalid", shortcut: "KeyQ" }
         ],
+        favoriteServers: [
+          { address: " voice.example.test:64738 ", label: " Alpha " },
+          { address: "voice.example.test:64738", label: "" },
+          { address: "backup.example.test:64738" },
+          { address: "", label: "Missing" }
+        ],
         localNicknames: {
           "  atlas  ": "  Lead  ",
           echo: "",
@@ -171,7 +192,12 @@ test("AppClientStore normalizes invalid push-to-talk shortcuts back to the defau
         },
         autoReconnect: true,
         notificationsEnabled: true,
-        showLatencyDetails: false
+        showLatencyDetails: false,
+        voiceProcessing: {
+          agc: "loud",
+          noiseSuppression: false,
+          echoCancellation: true
+        }
       }
     },
     waitForConnection: async () => {}
@@ -182,8 +208,17 @@ test("AppClientStore normalizes invalid push-to-talk shortcuts back to the defau
     { target: "toggleMute", shortcut: "KeyM" },
     { target: "toggleLatencyDetails", shortcut: "KeyL" }
   ]);
+  assert.deepEqual(store.getState().preferences.favoriteServers, [
+    { address: "voice.example.test:64738", label: "Alpha" },
+    { address: "backup.example.test:64738", label: "backup.example.test:64738" }
+  ]);
   assert.deepEqual(store.getState().preferences.localNicknames, {
     atlas: "Lead"
+  });
+  assert.deepEqual(store.getState().preferences.voiceProcessing, {
+    agc: true,
+    noiseSuppression: false,
+    echoCancellation: true
   });
   assert.equal(store.updatePreferences({ pushToTalkShortcut: "m" }).preferences.pushToTalkShortcut, "KeyM");
 });
@@ -205,12 +240,18 @@ test("migratePersistedAppClientState upgrades legacy desktop settings snapshots 
       pushToTalk: true,
       pushToTalkShortcut: "v",
       shortcutBindings: [{ target: "cycleChannel", shortcut: "r" }],
+      favoriteServers: [{ address: "voice.example.test:64738", label: "Ops" }],
       localNicknames: {
         atlas: "Lead"
       },
       autoReconnect: false,
       notificationsEnabled: false,
-      showLatencyDetails: true
+      showLatencyDetails: true,
+      voiceProcessing: {
+        agc: false,
+        noiseSuppression: false,
+        echoCancellation: true
+      }
     }
   });
 
@@ -231,12 +272,18 @@ test("migratePersistedAppClientState upgrades legacy desktop settings snapshots 
       pushToTalk: true,
       pushToTalkShortcut: "KeyV",
       shortcutBindings: [{ target: "cycleChannel", shortcut: "KeyR" }],
+      favoriteServers: [{ address: "voice.example.test:64738", label: "Ops" }],
       localNicknames: {
         atlas: "Lead"
       },
       autoReconnect: false,
       notificationsEnabled: false,
-      showLatencyDetails: true
+      showLatencyDetails: true,
+      voiceProcessing: {
+        agc: false,
+        noiseSuppression: false,
+        echoCancellation: true
+      }
     }
   });
 });
@@ -258,8 +305,14 @@ test("AppClientStore persists versioned settings snapshots", () => {
     pushToTalk: true,
     pushToTalkShortcut: "KeyV",
     shortcutBindings: [{ target: "toggleMute", shortcut: "KeyM" }],
+    favoriteServers: [{ address: "voice.example.test:64738", label: "Primary" }],
     localNicknames: {
       atlas: "Lead"
+    },
+    voiceProcessing: {
+      agc: false,
+      noiseSuppression: true,
+      echoCancellation: true
     }
   });
 
@@ -280,12 +333,18 @@ test("AppClientStore persists versioned settings snapshots", () => {
       pushToTalk: true,
       pushToTalkShortcut: "KeyV",
       shortcutBindings: [{ target: "toggleMute", shortcut: "KeyM" }],
+      favoriteServers: [{ address: "voice.example.test:64738", label: "Primary" }],
       localNicknames: {
         atlas: "Lead"
       },
       autoReconnect: true,
       notificationsEnabled: true,
-      showLatencyDetails: false
+      showLatencyDetails: false,
+      voiceProcessing: {
+        agc: false,
+        noiseSuppression: true,
+        echoCancellation: true
+      }
     }
   });
 });
@@ -294,6 +353,9 @@ test("AppClientStore updates and clears persisted local nicknames", () => {
   const store = new AppClientStore({
     persistedState: {
       preferences: {
+        favoriteServers: [
+          { address: "voice.example.test:64738", label: "Primary" }
+        ],
         localNicknames: {
           atlas: "Lead"
         }
@@ -303,20 +365,60 @@ test("AppClientStore updates and clears persisted local nicknames", () => {
   });
 
   assert.deepEqual(store.updatePreferences({
+    favoriteServers: [
+      { address: "voice.example.test:64738", label: "Primary" },
+      { address: "backup.example.test:64738", label: "Backup" }
+    ],
     localNicknames: {
       atlas: "Lead",
       echo: "Anchor"
     }
-  }).preferences.localNicknames, {
-    atlas: "Lead",
-    echo: "Anchor"
+  }).preferences, {
+    pushToTalk: false,
+    pushToTalkShortcut: "Space",
+    shortcutBindings: [],
+    favoriteServers: [
+      { address: "voice.example.test:64738", label: "Primary" },
+      { address: "backup.example.test:64738", label: "Backup" }
+    ],
+    localNicknames: {
+      atlas: "Lead",
+      echo: "Anchor"
+    },
+    autoReconnect: true,
+    notificationsEnabled: true,
+    showLatencyDetails: false,
+    voiceProcessing: {
+      agc: true,
+      noiseSuppression: true,
+      echoCancellation: false
+    }
   });
   assert.deepEqual(store.updatePreferences({
+    favoriteServers: [
+      { address: "backup.example.test:64738", label: "Backup" }
+    ],
     localNicknames: {
       echo: "Anchor"
     }
-  }).preferences.localNicknames, {
-    echo: "Anchor"
+  }).preferences, {
+    pushToTalk: false,
+    pushToTalkShortcut: "Space",
+    shortcutBindings: [],
+    favoriteServers: [
+      { address: "backup.example.test:64738", label: "Backup" }
+    ],
+    localNicknames: {
+      echo: "Anchor"
+    },
+    autoReconnect: true,
+    notificationsEnabled: true,
+    showLatencyDetails: false,
+    voiceProcessing: {
+      agc: true,
+      noiseSuppression: true,
+      echoCancellation: false
+    }
   });
 });
 
@@ -421,6 +523,37 @@ test("AppClientStore keeps channel selection aligned with enter permissions", as
   assert.equal(store.updateChannelPermissions("root", { enter: false }).activeChannelId, null);
 });
 
+test("AppClientStore joinChannel moves the local participant into the selected room", async () => {
+  const store = new AppClientStore({
+    waitForConnection: async () => {}
+  });
+
+  await store.connect({
+    serverAddress: "voice.example.test:64738",
+    nickname: "Scout"
+  });
+
+  store.syncSessionSnapshot({
+    channels: [
+      { id: "root", name: "Root", position: 0 },
+      { id: "squad", name: "Squad", parentId: "root", position: 0 },
+      { id: "ops", name: "Ops", parentId: "root", position: 1, permissions: { enter: false } }
+    ],
+    participants: [
+      { id: "self", name: "Scout", channelId: "root", status: "live", isSelf: true },
+      { id: "guest", name: "Guest", channelId: "squad", status: "idle" }
+    ]
+  });
+
+  let state = store.joinChannel("squad");
+  assert.equal(state.activeChannelId, "squad");
+  assert.equal(state.participants.find((participant) => participant.isSelf)?.channelId, "squad");
+
+  state = store.joinChannel("ops");
+  assert.equal(state.activeChannelId, "squad");
+  assert.equal(state.participants.find((participant) => participant.isSelf)?.channelId, "squad");
+});
+
 test("AppClientStore incrementally applies channel and participant updates", async () => {
   const store = new AppClientStore({
     waitForConnection: async () => {}
@@ -434,7 +567,14 @@ test("AppClientStore incrementally applies channel and participant updates", asy
   store.upsertChannel({ id: "root", name: "Root", position: 0 });
   store.upsertChannel({ id: "squad", name: "Squad", parentId: "root", position: 0, permissions: { speak: false } });
   store.upsertParticipant({ id: "self", name: "Scout", channelId: "root", status: "live", isSelf: true });
-  store.upsertParticipant({ id: "alpha", name: "Alpha", channelId: "squad", status: "muted" });
+  store.upsertParticipant({
+    id: "alpha",
+    name: "Alpha",
+    channelId: "squad",
+    status: "muted",
+    isMuted: true,
+    isSelfMuted: true
+  });
 
   let state = store.getState();
   assert.deepEqual(state.channels.map((channel) => ({
@@ -446,6 +586,18 @@ test("AppClientStore incrementally applies channel and participant updates", asy
     { id: "root", participantIds: ["self"], depth: 0, speak: true },
     { id: "squad", participantIds: ["alpha"], depth: 1, speak: false }
   ]);
+  assert.deepEqual(state.participants.find((participant) => participant.id === "alpha"), {
+    id: "alpha",
+    name: "Alpha",
+    channelId: "squad",
+    status: "muted",
+    isSelf: undefined,
+    isMuted: true,
+    isDeafened: undefined,
+    isSelfMuted: true,
+    isSelfDeafened: undefined,
+    isSuppressed: undefined
+  });
 
   store.upsertParticipant({ id: "alpha", channelId: "root", status: "live" });
   state = store.getState();
@@ -483,7 +635,7 @@ test("AppClientStore syncLiveSession applies channel tree, active room, roster, 
     ],
     participants: [
       { id: "self", name: "Scout", channelId: "squad", status: "live", isSelf: true },
-      { id: "guest", name: "Guest", channelId: "root", status: "idle" },
+      { id: "guest", name: "Guest", channelId: "root", status: "idle", isSelfMuted: true },
       { id: "orphan", name: "Orphan", channelId: "missing", status: "live" }
     ],
     messages: [
@@ -527,8 +679,30 @@ test("AppClientStore syncLiveSession applies channel tree, active room, roster, 
     { id: "squad", parentId: "root", depth: 1, participantIds: ["self"] }
   ]);
   assert.deepEqual(nextState.participants, [
-    { id: "guest", name: "Guest", channelId: "root", status: "idle", isSelf: undefined },
-    { id: "self", name: "Scout", channelId: "squad", status: "live", isSelf: true }
+    {
+      id: "guest",
+      name: "Guest",
+      channelId: "root",
+      status: "idle",
+      isSelf: undefined,
+      isMuted: undefined,
+      isDeafened: undefined,
+      isSelfMuted: true,
+      isSelfDeafened: undefined,
+      isSuppressed: undefined
+    },
+    {
+      id: "self",
+      name: "Scout",
+      channelId: "squad",
+      status: "live",
+      isSelf: true,
+      isMuted: undefined,
+      isDeafened: undefined,
+      isSelfMuted: undefined,
+      isSelfDeafened: undefined,
+      isSuppressed: undefined
+    }
   ]);
   assert.deepEqual(nextState.messages, [
     {
@@ -580,4 +754,144 @@ test("AppClientStore sendChatMessage appends a self-authored room message", asyn
   assert.equal(nextState.messages[0]?.body, "Ready to roll.");
   assert.equal(nextState.messages[0]?.channelId, "lobby");
   assert.equal(nextState.messages[0]?.isSelf, true);
+});
+
+test("AppClientStore sendChatMessage supports direct messages to another participant", async () => {
+  const store = new AppClientStore({
+    waitForConnection: async () => {}
+  });
+
+  await store.connect({
+    serverAddress: "voice.example.test:64738",
+    nickname: "Scout"
+  });
+
+  store.syncLiveSession({
+    channels: [
+      { id: "lobby", name: "Lobby", parentId: null }
+    ],
+    participants: [
+      { id: "self", name: "Scout", channelId: "lobby", status: "live", isSelf: true },
+      { id: "atlas", name: "Atlas", channelId: "lobby", status: "live" }
+    ]
+  });
+
+  const nextState = store.sendChatMessage({
+    body: "  Message me when you land.  ",
+    participantId: "atlas"
+  });
+
+  assert.equal(nextState.messages.length, 1);
+  assert.equal(nextState.messages[0]?.author, "Scout");
+  assert.equal(nextState.messages[0]?.body, "Message me when you land.");
+  assert.equal(nextState.messages[0]?.channelId, null);
+  assert.equal(nextState.messages[0]?.participantId, "atlas");
+  assert.equal(nextState.messages[0]?.isSelf, true);
+});
+
+test("mergeLiveSessionState preserves local chat messages while appending incoming session updates", () => {
+  const nextState = mergeLiveSessionState({
+    connection: {
+      status: "connected",
+      serverAddress: "voice.example.test:64738",
+      nickname: "Scout",
+      error: null
+    },
+    channels: [
+      {
+        id: "lobby",
+        name: "Lobby",
+        parentId: null,
+        depth: 0,
+        position: 0,
+        permissions: {
+          traverse: true,
+          enter: true,
+          speak: true,
+          muteDeafen: false,
+          move: false,
+          write: true
+        },
+        participantIds: ["self", "atlas"]
+      }
+    ],
+    activeChannelId: "lobby",
+    participants: [
+      { id: "self", name: "Scout", channelId: "lobby", status: "live", isSelf: true },
+      { id: "atlas", name: "Atlas", channelId: "lobby", status: "live" }
+    ],
+    messages: [
+      {
+        id: "welcome",
+        author: "Server",
+        body: "Welcome aboard",
+        channelId: null,
+        sentAt: "2026-03-07T22:00:00.000Z"
+      },
+      {
+        id: "local",
+        author: "Scout",
+        body: "Ready to roll.",
+        channelId: "lobby",
+        sentAt: "2026-03-07T22:00:05.000Z",
+        isSelf: true
+      }
+    ],
+    audio: {
+      inputDeviceId: "default",
+      outputDeviceId: "default",
+      captureEnabled: true,
+      selfMuted: false,
+      inputGain: 100,
+      outputGain: 100
+    },
+    preferences: {
+      pushToTalk: false,
+      pushToTalkShortcut: "Space",
+      shortcutBindings: [],
+      localNicknames: {},
+      autoReconnect: true,
+      notificationsEnabled: true,
+      showLatencyDetails: false
+    },
+    telemetry: {
+      latencyMs: null,
+      jitterMs: null,
+      packetLoss: null
+    },
+    recentServers: []
+  }, {
+    channels: [
+      { id: "lobby", name: "Lobby", parentId: null }
+    ],
+    participants: [
+      { id: "self", name: "Scout", channelId: "lobby", status: "live", isSelf: true },
+      { id: "atlas", name: "Atlas", channelId: "lobby", status: "live" }
+    ],
+    messages: [
+      {
+        id: "welcome",
+        author: "Server",
+        body: "Welcome aboard",
+        channelId: null,
+        sentAt: "2026-03-07T22:00:00.000Z"
+      },
+      {
+        id: "atlas-dm",
+        author: "Atlas",
+        body: "Send me a direct reply.",
+        channelId: null,
+        participantId: "atlas",
+        sentAt: "2026-03-07T22:00:10.000Z"
+      }
+    ]
+  });
+
+  assert.deepEqual(nextState.messages.map((message) => message.id), [
+    "welcome",
+    "local",
+    "atlas-dm"
+  ]);
+  assert.equal(nextState.messages[1]?.body, "Ready to roll.");
+  assert.equal(nextState.messages[2]?.participantId, "atlas");
 });

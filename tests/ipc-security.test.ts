@@ -20,7 +20,7 @@ import {
   VOICE_API_WHITELIST,
   VOICE_EVENT_CHANNELS,
   VOICE_INVOKE_CHANNELS,
-  withContentSecurityPolicy
+  withContentSecurityPolicy,
 } from "../electron/security.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -42,12 +42,12 @@ test("preload exposes only the whitelisted app and voice APIs", () => {
     removeListener: (channel: string, _listener: unknown) => {
       removedCalls.push(channel);
     },
-    send: () => {}
+    send: () => {},
   };
 
   const preloadApi = createPreloadApi(fakeIpcRenderer, {
     platform: "linux",
-    versions: { electron: "35.7.5" } as NodeJS.ProcessVersions
+    versions: { electron: "35.7.5" } as NodeJS.ProcessVersions,
   });
 
   assert.deepEqual(Object.keys(preloadApi.app), [...APP_API_WHITELIST]);
@@ -57,11 +57,18 @@ test("preload exposes only the whitelisted app and voice APIs", () => {
 
   void preloadApi.app.runSecureVoiceSelfTest();
   void preloadApi.app.getState();
-  void preloadApi.app.connect({ serverAddress: "voice.example.test:64738", nickname: "Scout" });
+  void preloadApi.app.connect({
+    serverAddress: "voice.example.test:64738",
+    nickname: "Scout",
+  });
   void preloadApi.app.rememberServer("stage.example.test:64738");
   void preloadApi.app.disconnect();
   void preloadApi.app.selectChannel("lobby");
-  void preloadApi.app.sendChatMessage("Ready to roll");
+  void preloadApi.app.joinChannel("lobby");
+  void preloadApi.app.sendChatMessage({
+    body: "Ready to roll",
+    channelId: "lobby",
+  });
   void preloadApi.app.updateAudioSettings({ inputGain: 120 });
   void preloadApi.app.updatePreferences({ autoReconnect: false });
   void preloadApi.app.exportDiagnostics();
@@ -87,6 +94,7 @@ test("preload exposes only the whitelisted app and voice APIs", () => {
       APP_INVOKE_CHANNELS.rememberServer,
       APP_INVOKE_CHANNELS.disconnect,
       APP_INVOKE_CHANNELS.selectChannel,
+      APP_INVOKE_CHANNELS.joinChannel,
       APP_INVOKE_CHANNELS.sendChatMessage,
       APP_INVOKE_CHANNELS.updateAudioSettings,
       APP_INVOKE_CHANNELS.updatePreferences,
@@ -94,13 +102,13 @@ test("preload exposes only the whitelisted app and voice APIs", () => {
       VOICE_INVOKE_CHANNELS.connect,
       VOICE_INVOKE_CHANNELS.send,
       VOICE_INVOKE_CHANNELS.disconnect,
-      VOICE_INVOKE_CHANNELS.getStatus
-    ]
+      VOICE_INVOKE_CHANNELS.getStatus,
+    ],
   );
   assert.deepEqual(onCalls, [
     APP_EVENT_CHANNELS.onStateChanged,
     VOICE_EVENT_CHANNELS.onMessage,
-    VOICE_EVENT_CHANNELS.onStatus
+    VOICE_EVENT_CHANNELS.onStatus,
   ]);
   assert.deepEqual(removedCalls, onCalls);
 });
@@ -110,7 +118,7 @@ test("secure BrowserWindow preferences enforce context isolation and sandboxing"
 
   assert.deepEqual(webPreferences, {
     preload: "/tmp/preload.mjs",
-    ...SECURE_WEB_PREFERENCES
+    ...SECURE_WEB_PREFERENCES,
   });
   assert.doesNotThrow(() => {
     validateSecureWebPreferences(webPreferences);
@@ -118,25 +126,25 @@ test("secure BrowserWindow preferences enforce context isolation and sandboxing"
   assert.throws(() => {
     validateSecureWebPreferences({
       ...webPreferences,
-      contextIsolation: false
+      contextIsolation: false,
     });
   }, /contextIsolation/);
   assert.throws(() => {
     validateSecureWebPreferences({
       ...webPreferences,
-      nodeIntegration: true
+      nodeIntegration: true,
     });
   }, /nodeIntegration/);
   assert.throws(() => {
     validateSecureWebPreferences({
       ...webPreferences,
-      sandbox: false
+      sandbox: false,
     });
   }, /sandbox/);
   assert.throws(() => {
     validateSecureWebPreferences({
       ...webPreferences,
-      webSecurity: false
+      webSecurity: false,
     });
   }, /webSecurity/);
 });
@@ -144,20 +152,22 @@ test("secure BrowserWindow preferences enforce context isolation and sandboxing"
 test("content security policy is attached to response headers and renderer HTML", async () => {
   const responseHeaders = withContentSecurityPolicy({
     "x-frame-options": ["DENY"],
-    "content-security-policy": ["default-src *"]
+    "content-security-policy": ["default-src *"],
   });
   const indexHtml = await readFile(path.join(repoRoot, "index.html"), "utf8");
 
   assert.deepEqual(responseHeaders, {
     "x-frame-options": ["DENY"],
-    "Content-Security-Policy": [CONTENT_SECURITY_POLICY]
+    "Content-Security-Policy": [CONTENT_SECURITY_POLICY],
   });
   assert.match(CONTENT_SECURITY_POLICY, /default-src 'self'/);
   assert.match(CONTENT_SECURITY_POLICY, /object-src 'none'/);
   assert.match(CONTENT_SECURITY_POLICY, /frame-ancestors 'none'/);
   assert.match(
     indexHtml,
-    new RegExp(`http-equiv="Content-Security-Policy"[\\s\\S]*content="${CONTENT_SECURITY_POLICY.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"`)
+    new RegExp(
+      `http-equiv="Content-Security-Policy"[\\s\\S]*content="${CONTENT_SECURITY_POLICY.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"`,
+    ),
   );
 });
 
@@ -167,7 +177,7 @@ test("CSP violations are serialized and logged through the internal security cha
   const fakeTarget = {
     addEventListener: (type: string, listener: (event: unknown) => void) => {
       listeners.set(type, listener);
-    }
+    },
   };
   const fakeIpcRenderer = {
     invoke: async () => undefined,
@@ -175,7 +185,7 @@ test("CSP violations are serialized and logged through the internal security cha
     removeListener: () => {},
     send: (channel: string, payload: unknown) => {
       sentPayloads.push({ channel, payload });
-    }
+    },
   };
 
   registerCspViolationLogging(fakeTarget, fakeIpcRenderer);
@@ -185,20 +195,25 @@ test("CSP violations are serialized and logged through the internal security cha
     documentURI: "file:///renderer/index.html",
     effectiveDirective: "script-src-elem",
     originalPolicy: CONTENT_SECURITY_POLICY,
-    violatedDirective: "script-src"
+    violatedDirective: "script-src",
   });
 
   assert.equal(sentPayloads.length, 1);
   assert.equal(sentPayloads[0]?.channel, CSP_VIOLATION_CHANNEL);
-  assert.deepEqual(sentPayloads[0]?.payload, toCspViolationPayload({
-    blockedURI: "",
-    documentURI: "file:///renderer/index.html",
-    effectiveDirective: "script-src-elem",
-    originalPolicy: CONTENT_SECURITY_POLICY,
-    violatedDirective: "script-src"
-  }));
+  assert.deepEqual(
+    sentPayloads[0]?.payload,
+    toCspViolationPayload({
+      blockedURI: "",
+      documentURI: "file:///renderer/index.html",
+      effectiveDirective: "script-src-elem",
+      originalPolicy: CONTENT_SECURITY_POLICY,
+      violatedDirective: "script-src",
+    }),
+  );
   assert.match(
-    formatCspViolation(sentPayloads[0]?.payload as ReturnType<typeof toCspViolationPayload>),
-    /\[csp\] Blocked "script-src-elem"/
+    formatCspViolation(
+      sentPayloads[0]?.payload as ReturnType<typeof toCspViolationPayload>,
+    ),
+    /\[csp\] Blocked "script-src-elem"/,
   );
 });

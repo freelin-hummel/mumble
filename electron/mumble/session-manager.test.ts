@@ -154,7 +154,9 @@ test("MumbleSessionManager bootstraps a live session from control-channel messag
   assert.equal(sawAuthenticating, true);
   assert.deepEqual(channel.connections, [{
     host: "voice.example.test",
-    port: 64738
+    port: 64738,
+    secure: true,
+    rejectUnauthorized: false
   }]);
   assert.deepEqual(channel.sentMessages.map((message) => message.type), [
     TCPMessageType.Version,

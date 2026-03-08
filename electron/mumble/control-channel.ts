@@ -1,11 +1,15 @@
 import { EventEmitter, once } from "node:events";
-import { Socket } from "node:net";
+import { Socket, isIP } from "node:net";
+import { connect as connectTls, type TLSSocket } from "node:tls";
 import { ProtobufFramer } from "./framer.js";
 import type { ProtobufControlMessage } from "./types.js";
 
 export interface TCPControlChannelConnectOptions {
   host: string;
   port: number;
+  secure?: boolean;
+  rejectUnauthorized?: boolean;
+  servername?: string;
 }
 
 export interface TCPControlChannelEvents {
@@ -18,7 +22,7 @@ export interface TCPControlChannelEvents {
 export class TCPControlChannel extends EventEmitter<TCPControlChannelEvents> {
   readonly #framer: ProtobufFramer;
   readonly #socketFactory: () => Socket;
-  #socket: Socket | null = null;
+  #socket: Socket | TLSSocket | null = null;
 
   constructor(
     socketFactory: () => Socket = () => new Socket(),
@@ -39,7 +43,14 @@ export class TCPControlChannel extends EventEmitter<TCPControlChannelEvents> {
       throw new Error("The TCP control channel is already connected.");
     }
 
-    const socket = this.#socketFactory();
+    const socket = options.secure
+      ? connectTls({
+        host: options.host,
+        port: options.port,
+        rejectUnauthorized: options.rejectUnauthorized ?? true,
+        servername: options.servername ?? (isIP(options.host) === 0 ? options.host : undefined)
+      })
+      : this.#socketFactory();
     this.#socket = socket;
     this.#framer.reset();
 
@@ -64,15 +75,21 @@ export class TCPControlChannel extends EventEmitter<TCPControlChannelEvents> {
       };
 
       const cleanup = () => {
-        socket.off("connect", handleConnect);
+        socket.off(options.secure ? "secureConnect" : "connect", handleConnect);
         socket.off("error", handleError);
         socket.off("close", handleClose);
       };
 
-      socket.once("connect", handleConnect);
+      socket.once(options.secure ? "secureConnect" : "connect", handleConnect);
       socket.once("error", handleError);
       socket.once("close", handleClose);
-      socket.connect(options);
+
+      if (!options.secure) {
+        socket.connect({
+          host: options.host,
+          port: options.port
+        });
+      }
     });
   }
 
@@ -111,7 +128,7 @@ export class TCPControlChannel extends EventEmitter<TCPControlChannelEvents> {
     });
   }
 
-  #bindSocket(socket: Socket): void {
+  #bindSocket(socket: Socket | TLSSocket): void {
     socket.on("data", (chunk) => {
       try {
         for (const message of this.#framer.push(chunk)) {
