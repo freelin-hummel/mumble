@@ -11,7 +11,7 @@ import {
   Switch,
   Text,
   TextField,
-  Theme
+  Theme,
 } from "@radix-ui/themes";
 import {
   ChatBubbleIcon,
@@ -21,17 +21,20 @@ import {
   MixerHorizontalIcon,
   PersonIcon,
   SpeakerLoudIcon,
-  SpeakerOffIcon
+  SpeakerOffIcon,
 } from "@radix-ui/react-icons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { appendLocalChatMessageState, mergeLiveSessionState } from "../electron/appClientState.js";
+import {
+  appendLocalChatMessageState,
+  mergeLiveSessionState,
+} from "../electron/appClientState.js";
 import {
   applyOutputDeviceSelection,
   buildAudioDeviceState,
   createInputDeviceConstraints,
   subscribeToAudioDeviceChanges,
   SYSTEM_DEFAULT_DEVICE_ID,
-  type BrowserAudioDevice
+  type BrowserAudioDevice,
 } from "./audioDevices";
 import { QuickAction } from "./components/QuickAction";
 import { SectionHeader } from "./components/SectionHeader";
@@ -42,13 +45,13 @@ import {
   dspFeatures,
   loadDspPipeline,
   persistDspSettings,
-  setDspFeature
+  setDspFeature,
 } from "./dspPipeline.mjs";
 import {
   findNextShortcutTarget,
   getDefaultShortcutBinding,
   getShortcutTargetOption,
-  shortcutTargetOptions
+  shortcutTargetOptions,
 } from "./shortcutBindings";
 import {
   createInitialVoiceActivationState,
@@ -57,14 +60,14 @@ import {
   formatPushToTalkShortcut,
   matchesPushToTalkShortcut,
   shortcutFromKeyboardEvent,
-  stepVoiceActivation
+  stepVoiceActivation,
 } from "./voiceActivation";
 import {
   describeQuickActionLatency,
   describeTalkMode,
   describeTransportStatus,
   findNextNavigableChannel,
-  formatTransportActivity
+  formatTransportActivity,
 } from "./sessionQuickActions";
 import { createTestServerSessions } from "./testServerSession.js";
 
@@ -73,7 +76,7 @@ const fallbackAppState: AppClientState = {
     status: "disconnected",
     serverAddress: "",
     nickname: "",
-    error: null
+    error: null,
   },
   channels: [],
   activeChannelId: null,
@@ -85,7 +88,7 @@ const fallbackAppState: AppClientState = {
     captureEnabled: true,
     selfMuted: false,
     inputGain: 100,
-    outputGain: 100
+    outputGain: 100,
   },
   preferences: {
     pushToTalk: false,
@@ -94,14 +97,14 @@ const fallbackAppState: AppClientState = {
     localNicknames: {},
     autoReconnect: true,
     notificationsEnabled: true,
-    showLatencyDetails: false
+    showLatencyDetails: false,
   },
   telemetry: {
     latencyMs: null,
     jitterMs: null,
-    packetLoss: null
+    packetLoss: null,
   },
-  recentServers: []
+  recentServers: [],
 };
 
 const audioPresets = [
@@ -111,8 +114,8 @@ const audioPresets = [
     settings: {
       agc: true,
       noiseSuppression: true,
-      echoCancellation: false
-    }
+      echoCancellation: false,
+    },
   },
   {
     label: "Party mode",
@@ -120,8 +123,8 @@ const audioPresets = [
     settings: {
       agc: true,
       noiseSuppression: true,
-      echoCancellation: true
-    }
+      echoCancellation: true,
+    },
   },
   {
     label: "Late night",
@@ -129,31 +132,39 @@ const audioPresets = [
     settings: {
       agc: false,
       noiseSuppression: true,
-      echoCancellation: true
-    }
-  }
+      echoCancellation: true,
+    },
+  },
 ] as const;
 
 const ANALYSER_SMOOTHING_CONSTANT = 0.85;
 const RMS_TO_LEVEL_SCALING_FACTOR = 4.5;
+const VOICE_CAPTURE_TIMESLICE_MS = 250;
 const BASE_CHANNEL_PADDING = 16;
 const CHANNEL_INDENT_PER_LEVEL = 16;
+const PREFERRED_VOICE_CAPTURE_MIME_TYPES = [
+  "audio/webm;codecs=opus",
+  "audio/webm",
+  "audio/ogg;codecs=opus",
+] as const;
 
 const statusCopy: Record<AppClientConnectionState["status"], string> = {
   disconnected: "Disconnected",
   connecting: "Connecting…",
   authenticating: "Authenticating…",
   connected: "Connected",
-  error: "Needs attention"
+  error: "Needs attention",
 };
 
-const isConnectionBusy = (status: AppClientConnectionState["status"]) => (
-  status === "connecting" || status === "authenticating"
-);
+const isConnectionBusy = (status: AppClientConnectionState["status"]) =>
+  status === "connecting" || status === "authenticating";
 
 const buildRecentServers = (recentServers: string[], serverAddress: string) => {
   const normalizedAddress = serverAddress.trim();
-  return [normalizedAddress, ...recentServers.filter((value) => value !== normalizedAddress)].slice(0, 5);
+  return [
+    normalizedAddress,
+    ...recentServers.filter((value) => value !== normalizedAddress),
+  ].slice(0, 5);
 };
 
 const formatChatTimestamp = (value: string) => {
@@ -164,30 +175,32 @@ const formatChatTimestamp = (value: string) => {
 
   return timestamp.toLocaleTimeString([], {
     hour: "numeric",
-    minute: "2-digit"
+    minute: "2-digit",
   });
 };
 
 const getParticipantDisplayName = (
   participant: AppClientParticipant,
-  localNicknames: AppClientPreferences["localNicknames"]
+  localNicknames: AppClientPreferences["localNicknames"],
 ) => localNicknames[participant.id] ?? participant.name;
 
 const withParticipantLocalNickname = (
   localNicknames: AppClientPreferences["localNicknames"],
   participantId: string,
-  nickname: string
+  nickname: string,
 ) => {
   const normalizedNickname = nickname.trim();
   if (normalizedNickname.length === 0) {
-    return Object.fromEntries(Object.entries(localNicknames).filter(([storedParticipantId]) => (
-      storedParticipantId !== participantId
-    )));
+    return Object.fromEntries(
+      Object.entries(localNicknames).filter(
+        ([storedParticipantId]) => storedParticipantId !== participantId,
+      ),
+    );
   }
 
   return {
     ...localNicknames,
-    [participantId]: normalizedNickname
+    [participantId]: normalizedNickname,
   };
 };
 const getParticipantStatusLabel = (participant: AppClientParticipant) => {
@@ -226,14 +239,14 @@ const getParticipantStateLabels = (participant: AppClientParticipant) => {
 const createFallbackConnectedState = (
   currentState: AppClientState,
   serverAddress: string,
-  nickname: string
+  nickname: string,
 ): AppClientState => ({
   ...currentState,
   connection: {
     status: "connected",
     serverAddress,
     nickname,
-    error: null
+    error: null,
   },
   channels: [],
   activeChannelId: null,
@@ -242,12 +255,14 @@ const createFallbackConnectedState = (
   telemetry: {
     latencyMs: null,
     jitterMs: null,
-    packetLoss: null
+    packetLoss: null,
   },
-  recentServers: buildRecentServers(currentState.recentServers, serverAddress)
+  recentServers: buildRecentServers(currentState.recentServers, serverAddress),
 });
 
-const getVoiceActivationLabel = (mode: ReturnType<typeof createInitialVoiceActivationState>["mode"]) => {
+const getVoiceActivationLabel = (
+  mode: ReturnType<typeof createInitialVoiceActivationState>["mode"],
+) => {
   switch (mode) {
     case "muted":
       return "Mic muted";
@@ -263,80 +278,123 @@ const getVoiceActivationLabel = (mode: ReturnType<typeof createInitialVoiceActiv
   }
 };
 
-const isEditableTarget = (target: EventTarget | null) => (
-  target instanceof HTMLElement
-    && (target.isContentEditable
-      || target.tagName === "INPUT"
-      || target.tagName === "TEXTAREA"
-      || target.tagName === "SELECT")
-);
+const isEditableTarget = (target: EventTarget | null) =>
+  target instanceof HTMLElement &&
+  (target.isContentEditable ||
+    target.tagName === "INPUT" ||
+    target.tagName === "TEXTAREA" ||
+    target.tagName === "SELECT");
 
 export function App() {
-  const [handshakeState, setHandshakeState] = useState<"idle" | "running" | "success" | "error">("idle");
-  const [selfTestResult, setSelfTestResult] = useState<SecureVoiceSelfTestResult | null>(null);
+  const [handshakeState, setHandshakeState] = useState<
+    "idle" | "running" | "success" | "error"
+  >("idle");
+  const [selfTestResult, setSelfTestResult] =
+    useState<SecureVoiceSelfTestResult | null>(null);
   const [selfTestError, setSelfTestError] = useState<string | null>(null);
-  const platformLabel = typeof window !== "undefined" && window.app
-    ? window.app.platform
-    : "web";
-  const mediaDevices = typeof navigator !== "undefined"
-    ? navigator.mediaDevices
-    : undefined;
-  const [enumeratedDevices, setEnumeratedDevices] = useState<BrowserAudioDevice[]>([]);
-  const [selectedInputId, setSelectedInputId] = useState(SYSTEM_DEFAULT_DEVICE_ID);
-  const [selectedOutputId, setSelectedOutputId] = useState(SYSTEM_DEFAULT_DEVICE_ID);
+  const platformLabel =
+    typeof window !== "undefined" && window.app ? window.app.platform : "web";
+  const mediaDevices =
+    typeof navigator !== "undefined" ? navigator.mediaDevices : undefined;
+  const [enumeratedDevices, setEnumeratedDevices] = useState<
+    BrowserAudioDevice[]
+  >([]);
+  const [selectedInputId, setSelectedInputId] = useState(
+    SYSTEM_DEFAULT_DEVICE_ID,
+  );
+  const [selectedOutputId, setSelectedOutputId] = useState(
+    SYSTEM_DEFAULT_DEVICE_ID,
+  );
   const [audioError, setAudioError] = useState<string | null>(null);
   const [isRefreshingDevices, setIsRefreshingDevices] = useState(false);
   const [outputRoutingReady, setOutputRoutingReady] = useState(false);
   const [appState, setAppState] = useState<AppClientState>(fallbackAppState);
-  const [isLoadingAppState, setIsLoadingAppState] = useState(Boolean(window.app?.getState));
+  const [isLoadingAppState, setIsLoadingAppState] = useState(
+    Boolean(window.app?.getState),
+  );
   const [serverAddress, setServerAddress] = useState("");
   const [nickname, setNickname] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
-  const [diagnosticsMessage, setDiagnosticsMessage] = useState<string | null>(null);
+  const [diagnosticsMessage, setDiagnosticsMessage] = useState<string | null>(
+    null,
+  );
   const [diagnosticsError, setDiagnosticsError] = useState<string | null>(null);
   const [isExportingDiagnostics, setIsExportingDiagnostics] = useState(false);
   const [chatDraft, setChatDraft] = useState("");
   const [dspPipeline, setDspPipelineState] = useState(() => loadDspPipeline());
-  const [voiceActivation, setVoiceActivation] = useState(() => createInitialVoiceActivationState());
+  const [voiceActivation, setVoiceActivation] = useState(() =>
+    createInitialVoiceActivationState(),
+  );
   const [meteringError, setMeteringError] = useState<string | null>(null);
+  const [voiceTransportStatus, setVoiceTransportStatus] =
+    useState<VoiceTransportStatus | null>(null);
+  const [voicePlaybackError, setVoicePlaybackError] = useState<string | null>(
+    null,
+  );
   const [pushToTalkPressed, setPushToTalkPressed] = useState(false);
-  const [voiceTransportStatus, setVoiceTransportStatus] = useState<VoiceTransportStatus | null>(null);
-  const [selectedParticipantId, setSelectedParticipantId] = useState<string | null>(null);
+  const [selectedParticipantId, setSelectedParticipantId] = useState<
+    string | null
+  >(null);
   const [participantNicknameDraft, setParticipantNicknameDraft] = useState("");
   const outputPreviewRef = useRef<HTMLAudioElement>(null);
   const diagnosticsSectionRef = useRef<HTMLDivElement>(null);
   const fallbackLiveSessionTimersRef = useRef<number[]>([]);
   const pushToTalkPressedRef = useRef(false);
-  const [dismissedConnectionErrorKey, setDismissedConnectionErrorKey] = useState<string | null>(null);
+  const voiceActivationRef = useRef(voiceActivation);
+  const voiceCaptureMimeTypeRef = useRef<string | null>(null);
+  const playbackQueueRef = useRef<string[]>([]);
+  const activePlaybackUrlRef = useRef<string | null>(null);
+  const isPlaybackActiveRef = useRef(false);
+  const [dismissedConnectionErrorKey, setDismissedConnectionErrorKey] =
+    useState<string | null>(null);
   const audioSettingsRef = useRef({
     captureEnabled: fallbackAppState.audio.captureEnabled,
     selfMuted: fallbackAppState.audio.selfMuted,
     inputGain: fallbackAppState.audio.inputGain,
     outputGain: fallbackAppState.audio.outputGain,
-    pushToTalk: fallbackAppState.preferences.pushToTalk
+    pushToTalk: fallbackAppState.preferences.pushToTalk,
   });
-  const audioDevices = useMemo(() => buildAudioDeviceState(
-    enumeratedDevices,
-    {
-      inputId: selectedInputId,
-      outputId: selectedOutputId
-    },
-    {
-      supported: Boolean(mediaDevices?.enumerateDevices),
-      error: mediaDevices?.enumerateDevices
-        ? audioError
-        : "Audio device APIs are unavailable in this runtime."
-    }
-  ), [audioError, enumeratedDevices, mediaDevices?.enumerateDevices, selectedInputId, selectedOutputId]);
+  const audioDevices = useMemo(
+    () =>
+      buildAudioDeviceState(
+        enumeratedDevices,
+        {
+          inputId: selectedInputId,
+          outputId: selectedOutputId,
+        },
+        {
+          supported: Boolean(mediaDevices?.enumerateDevices),
+          error: mediaDevices?.enumerateDevices
+            ? audioError
+            : "Audio device APIs are unavailable in this runtime.",
+        },
+      ),
+    [
+      audioError,
+      enumeratedDevices,
+      mediaDevices?.enumerateDevices,
+      selectedInputId,
+      selectedOutputId,
+    ],
+  );
 
   const syncFormState = useCallback((state: AppClientState) => {
-    setServerAddress((currentValue) => currentValue || state.connection.serverAddress || state.recentServers[0] || "");
+    setServerAddress(
+      (currentValue) =>
+        currentValue ||
+        state.connection.serverAddress ||
+        state.recentServers[0] ||
+        "",
+    );
     setNickname((currentValue) => currentValue || state.connection.nickname);
   }, []);
 
-  const updateLocalAppState = useCallback((updater: (state: AppClientState) => AppClientState) => {
-    setAppState((currentState) => updater(currentState));
-  }, []);
+  const updateLocalAppState = useCallback(
+    (updater: (state: AppClientState) => AppClientState) => {
+      setAppState((currentState) => updater(currentState));
+    },
+    [],
+  );
 
   const clearFallbackLiveSessionTimers = useCallback(() => {
     fallbackLiveSessionTimersRef.current.forEach((timerId) => {
@@ -345,70 +403,159 @@ export function App() {
     fallbackLiveSessionTimersRef.current = [];
   }, []);
 
-  const startFallbackLiveSession = useCallback((nextNickname: string) => {
-    clearFallbackLiveSessionTimers();
-    fallbackLiveSessionTimersRef.current = createTestServerSessions(nextNickname).map(({ delayMs, session }) => (
-      window.setTimeout(() => {
-        updateLocalAppState((currentState) => mergeLiveSessionState(currentState, session));
-      }, delayMs)
-    ));
-  }, [clearFallbackLiveSessionTimers, updateLocalAppState]);
+  const startFallbackLiveSession = useCallback(
+    (nextNickname: string) => {
+      clearFallbackLiveSessionTimers();
+      fallbackLiveSessionTimersRef.current = createTestServerSessions(
+        nextNickname,
+      ).map(({ delayMs, session }) =>
+        window.setTimeout(() => {
+          updateLocalAppState((currentState) =>
+            mergeLiveSessionState(currentState, session),
+          );
+        }, delayMs),
+      );
+    },
+    [clearFallbackLiveSessionTimers, updateLocalAppState],
+  );
 
-  const updateAudioSettings = useCallback(async (audio: Partial<AppClientAudioSettings>) => {
-    if (window.app?.updateAudioSettings) {
-      const nextState = await window.app.updateAudioSettings(audio);
-      setAppState(nextState);
+  const clearBufferedPlayback = useCallback(() => {
+    const audioElement = outputPreviewRef.current;
+
+    playbackQueueRef.current.forEach((url) => {
+      URL.revokeObjectURL(url);
+    });
+    playbackQueueRef.current = [];
+    isPlaybackActiveRef.current = false;
+
+    if (activePlaybackUrlRef.current) {
+      URL.revokeObjectURL(activePlaybackUrlRef.current);
+      activePlaybackUrlRef.current = null;
+    }
+
+    if (audioElement) {
+      audioElement.pause();
+      audioElement.removeAttribute("src");
+      audioElement.load();
+    }
+  }, []);
+
+  const playQueuedPlayback = useCallback(function playQueuedPlayback() {
+    const audioElement = outputPreviewRef.current;
+    if (!audioElement || isPlaybackActiveRef.current) {
       return;
     }
 
-    updateLocalAppState((currentState) => ({
-      ...currentState,
-      audio: {
-        ...currentState.audio,
-        ...audio
+    const nextUrl = playbackQueueRef.current.shift();
+    if (!nextUrl) {
+      return;
+    }
+
+    if (activePlaybackUrlRef.current) {
+      URL.revokeObjectURL(activePlaybackUrlRef.current);
+    }
+
+    activePlaybackUrlRef.current = nextUrl;
+    isPlaybackActiveRef.current = true;
+    audioElement.src = nextUrl;
+
+    void audioElement
+      .play()
+      .then(() => {
+        setVoicePlaybackError(null);
+      })
+      .catch((error) => {
+        isPlaybackActiveRef.current = false;
+        if (activePlaybackUrlRef.current) {
+          URL.revokeObjectURL(activePlaybackUrlRef.current);
+          activePlaybackUrlRef.current = null;
+        }
+        setVoicePlaybackError(
+          error instanceof Error
+            ? error.message
+            : "Unable to play remote audio.",
+        );
+        playQueuedPlayback();
+      });
+  }, []);
+
+  const enqueuePlaybackBlob = useCallback(
+    (blob: Blob) => {
+      playbackQueueRef.current.push(URL.createObjectURL(blob));
+      playQueuedPlayback();
+    },
+    [playQueuedPlayback],
+  );
+
+  const updateAudioSettings = useCallback(
+    async (audio: Partial<AppClientAudioSettings>) => {
+      if (window.app?.updateAudioSettings) {
+        const nextState = await window.app.updateAudioSettings(audio);
+        setAppState(nextState);
+        return;
       }
-    }));
-  }, [updateLocalAppState]);
 
-  const updatePreferences = useCallback(async (preferences: Partial<AppClientPreferences>) => {
-    if (window.app?.updatePreferences) {
-      const nextState = await window.app.updatePreferences(preferences);
-      setAppState(nextState);
-      return;
-    }
+      updateLocalAppState((currentState) => ({
+        ...currentState,
+        audio: {
+          ...currentState.audio,
+          ...audio,
+        },
+      }));
+    },
+    [updateLocalAppState],
+  );
 
-    updateLocalAppState((currentState) => ({
-      ...currentState,
-      preferences: {
-        ...currentState.preferences,
-        ...preferences
+  const updatePreferences = useCallback(
+    async (preferences: Partial<AppClientPreferences>) => {
+      if (window.app?.updatePreferences) {
+        const nextState = await window.app.updatePreferences(preferences);
+        setAppState(nextState);
+        return;
       }
-    }));
-  }, [updateLocalAppState]);
 
-  const rememberServer = useCallback(async (nextServerAddress: string) => {
-    const normalizedServerAddress = nextServerAddress.trim();
-    if (normalizedServerAddress.length === 0) {
-      return;
-    }
+      updateLocalAppState((currentState) => ({
+        ...currentState,
+        preferences: {
+          ...currentState.preferences,
+          ...preferences,
+        },
+      }));
+    },
+    [updateLocalAppState],
+  );
 
-    if (window.app?.rememberServer) {
-      const nextState = await window.app.rememberServer(normalizedServerAddress);
-      setAppState(nextState);
-      setServerAddress(nextState.connection.serverAddress);
-      return;
-    }
+  const rememberServer = useCallback(
+    async (nextServerAddress: string) => {
+      const normalizedServerAddress = nextServerAddress.trim();
+      if (normalizedServerAddress.length === 0) {
+        return;
+      }
 
-    updateLocalAppState((currentState) => ({
-      ...currentState,
-      connection: {
-        ...currentState.connection,
-        serverAddress: normalizedServerAddress
-      },
-      recentServers: buildRecentServers(currentState.recentServers, normalizedServerAddress)
-    }));
-    setServerAddress(normalizedServerAddress);
-  }, [updateLocalAppState]);
+      if (window.app?.rememberServer) {
+        const nextState = await window.app.rememberServer(
+          normalizedServerAddress,
+        );
+        setAppState(nextState);
+        setServerAddress(nextState.connection.serverAddress);
+        return;
+      }
+
+      updateLocalAppState((currentState) => ({
+        ...currentState,
+        connection: {
+          ...currentState.connection,
+          serverAddress: normalizedServerAddress,
+        },
+        recentServers: buildRecentServers(
+          currentState.recentServers,
+          normalizedServerAddress,
+        ),
+      }));
+      setServerAddress(normalizedServerAddress);
+    },
+    [updateLocalAppState],
+  );
 
   const loadRecentServer = useCallback((recentServer: string) => {
     setServerAddress(recentServer);
@@ -421,19 +568,23 @@ export function App() {
       selfMuted: appState.audio.selfMuted,
       inputGain: appState.audio.inputGain,
       outputGain: appState.audio.outputGain,
-      pushToTalk: appState.preferences.pushToTalk
+      pushToTalk: appState.preferences.pushToTalk,
     };
   }, [
     appState.audio.captureEnabled,
     appState.audio.inputGain,
     appState.audio.outputGain,
     appState.audio.selfMuted,
-    appState.preferences.pushToTalk
+    appState.preferences.pushToTalk,
   ]);
 
   useEffect(() => {
     pushToTalkPressedRef.current = pushToTalkPressed;
   }, [pushToTalkPressed]);
+
+  useEffect(() => {
+    voiceActivationRef.current = voiceActivation;
+  }, [voiceActivation]);
 
   const refreshAudioDevices = useCallback(async () => {
     if (!mediaDevices?.enumerateDevices) {
@@ -447,7 +598,11 @@ export function App() {
       setEnumeratedDevices(devices);
       setAudioError(null);
     } catch (error) {
-      setAudioError(error instanceof Error ? error.message : "Unable to refresh audio devices.");
+      setAudioError(
+        error instanceof Error
+          ? error.message
+          : "Unable to refresh audio devices.",
+      );
     } finally {
       setIsRefreshingDevices(false);
     }
@@ -471,7 +626,12 @@ export function App() {
     if (appState.audio.outputDeviceId !== selectedOutputId) {
       setSelectedOutputId(appState.audio.outputDeviceId);
     }
-  }, [appState.audio.inputDeviceId, appState.audio.outputDeviceId, selectedInputId, selectedOutputId]);
+  }, [
+    appState.audio.inputDeviceId,
+    appState.audio.outputDeviceId,
+    selectedInputId,
+    selectedOutputId,
+  ]);
 
   useEffect(() => {
     if (audioDevices.selectedInputId !== selectedInputId) {
@@ -481,14 +641,22 @@ export function App() {
     if (audioDevices.selectedOutputId !== selectedOutputId) {
       setSelectedOutputId(audioDevices.selectedOutputId);
     }
-  }, [audioDevices.selectedInputId, audioDevices.selectedOutputId, selectedInputId, selectedOutputId]);
+  }, [
+    audioDevices.selectedInputId,
+    audioDevices.selectedOutputId,
+    selectedInputId,
+    selectedOutputId,
+  ]);
 
   useEffect(() => {
     let active = true;
 
     const syncOutputRoute = async () => {
       try {
-        const applied = await applyOutputDeviceSelection(outputPreviewRef.current, audioDevices.selectedOutputId);
+        const applied = await applyOutputDeviceSelection(
+          outputPreviewRef.current,
+          audioDevices.selectedOutputId,
+        );
         if (active) {
           setOutputRoutingReady(applied);
         }
@@ -507,12 +675,101 @@ export function App() {
   }, [audioDevices.selectedOutputId]);
 
   useEffect(() => {
+    const audioElement = outputPreviewRef.current;
+    if (!audioElement) {
+      return undefined;
+    }
+
+    const handleEnded = () => {
+      isPlaybackActiveRef.current = false;
+      if (activePlaybackUrlRef.current) {
+        URL.revokeObjectURL(activePlaybackUrlRef.current);
+        activePlaybackUrlRef.current = null;
+      }
+      playQueuedPlayback();
+    };
+    const handleError = () => {
+      isPlaybackActiveRef.current = false;
+      if (activePlaybackUrlRef.current) {
+        URL.revokeObjectURL(activePlaybackUrlRef.current);
+        activePlaybackUrlRef.current = null;
+      }
+      setVoicePlaybackError("Remote audio playback failed.");
+      playQueuedPlayback();
+    };
+
+    audioElement.addEventListener("ended", handleEnded);
+    audioElement.addEventListener("error", handleError);
+
+    return () => {
+      audioElement.removeEventListener("ended", handleEnded);
+      audioElement.removeEventListener("error", handleError);
+      clearBufferedPlayback();
+    };
+  }, [clearBufferedPlayback, playQueuedPlayback]);
+
+  useEffect(() => {
+    if (!window.voice) {
+      return undefined;
+    }
+
+    let active = true;
+
+    const syncVoiceStatus = async () => {
+      try {
+        const status = await window.voice?.getStatus();
+        if (active && status) {
+          setVoiceTransportStatus(status);
+        }
+      } catch (error) {
+        if (active) {
+          setVoicePlaybackError(
+            error instanceof Error
+              ? error.message
+              : "Unable to query voice transport status.",
+          );
+        }
+      }
+    };
+
+    void syncVoiceStatus();
+    const unsubscribeStatus = window.voice.onStatus((status) => {
+      if (active) {
+        setVoiceTransportStatus(status);
+      }
+    });
+    const unsubscribeMessage = window.voice.onMessage((packet) => {
+      const mimeType = voiceCaptureMimeTypeRef.current;
+      if (!active || !mimeType) {
+        return;
+      }
+
+      enqueuePlaybackBlob(new Blob([packet.payload], { type: mimeType }));
+    });
+
+    return () => {
+      active = false;
+      unsubscribeStatus();
+      unsubscribeMessage();
+      clearBufferedPlayback();
+    };
+  }, [clearBufferedPlayback, enqueuePlaybackBlob]);
+
+  useEffect(() => {
+    if (appState.connection.status !== "connected") {
+      voiceCaptureMimeTypeRef.current = null;
+      clearBufferedPlayback();
+    }
+  }, [appState.connection.status, clearBufferedPlayback]);
+
+  useEffect(() => {
     if (!appState.preferences.pushToTalk) {
       setPushToTalkPressed(false);
       return undefined;
     }
 
-    const shortcut = appState.preferences.pushToTalkShortcut || DEFAULT_PUSH_TO_TALK_SHORTCUT;
+    const shortcut =
+      appState.preferences.pushToTalkShortcut || DEFAULT_PUSH_TO_TALK_SHORTCUT;
     const releaseShortcut = () => {
       setPushToTalkPressed(false);
     };
@@ -553,60 +810,73 @@ export function App() {
       window.removeEventListener("blur", releaseShortcut);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [appState.preferences.pushToTalk, appState.preferences.pushToTalkShortcut]);
+  }, [
+    appState.preferences.pushToTalk,
+    appState.preferences.pushToTalkShortcut,
+  ]);
 
   useEffect(() => {
-    setVoiceActivation((currentState) => stepVoiceActivation(currentState, {
-      inputLevel: currentState.inputLevel,
-      captureEnabled: appState.audio.captureEnabled,
-      selfMuted: appState.audio.selfMuted,
-      pushToTalk: appState.preferences.pushToTalk,
-      pushToTalkPressed,
-      inputGain: appState.audio.inputGain,
-      outputGain: appState.audio.outputGain
-    }));
+    setVoiceActivation((currentState) =>
+      stepVoiceActivation(currentState, {
+        inputLevel: currentState.inputLevel,
+        captureEnabled: appState.audio.captureEnabled,
+        selfMuted: appState.audio.selfMuted,
+        pushToTalk: appState.preferences.pushToTalk,
+        pushToTalkPressed,
+        inputGain: appState.audio.inputGain,
+        outputGain: appState.audio.outputGain,
+      }),
+    );
   }, [
     appState.audio.captureEnabled,
     appState.audio.inputGain,
     appState.audio.outputGain,
     appState.audio.selfMuted,
     appState.preferences.pushToTalk,
-    pushToTalkPressed
+    pushToTalkPressed,
   ]);
 
   useEffect(() => {
     if (!mediaDevices || typeof mediaDevices.getUserMedia !== "function") {
-      setMeteringError("Microphone metering requires MediaDevices.getUserMedia.");
-      setVoiceActivation((currentState) => stepVoiceActivation(currentState, {
-        inputLevel: 0,
-        captureEnabled: appState.audio.captureEnabled,
-        selfMuted: appState.audio.selfMuted,
-        pushToTalk: appState.preferences.pushToTalk,
-        pushToTalkPressed: pushToTalkPressedRef.current,
-        inputGain: appState.audio.inputGain,
-        outputGain: appState.audio.outputGain
-      }));
+      setMeteringError(
+        "Microphone metering requires MediaDevices.getUserMedia.",
+      );
+      setVoiceActivation((currentState) =>
+        stepVoiceActivation(currentState, {
+          inputLevel: 0,
+          captureEnabled: appState.audio.captureEnabled,
+          selfMuted: appState.audio.selfMuted,
+          pushToTalk: appState.preferences.pushToTalk,
+          pushToTalkPressed: pushToTalkPressedRef.current,
+          inputGain: appState.audio.inputGain,
+          outputGain: appState.audio.outputGain,
+        }),
+      );
       return undefined;
     }
 
     if (!appState.audio.captureEnabled) {
       setMeteringError(null);
-      setVoiceActivation((currentState) => stepVoiceActivation(currentState, {
-        inputLevel: 0,
-        captureEnabled: false,
-        selfMuted: appState.audio.selfMuted,
-        pushToTalk: appState.preferences.pushToTalk,
-        pushToTalkPressed: pushToTalkPressedRef.current,
-        inputGain: appState.audio.inputGain,
-        outputGain: appState.audio.outputGain
-      }));
+      setVoiceActivation((currentState) =>
+        stepVoiceActivation(currentState, {
+          inputLevel: 0,
+          captureEnabled: false,
+          selfMuted: appState.audio.selfMuted,
+          pushToTalk: appState.preferences.pushToTalk,
+          pushToTalkPressed: pushToTalkPressedRef.current,
+          inputGain: appState.audio.inputGain,
+          outputGain: appState.audio.outputGain,
+        }),
+      );
       return undefined;
     }
 
     const windowWithAudioContext = window as Window & {
       webkitAudioContext?: typeof AudioContext;
     };
-    const AudioContextCtor = windowWithAudioContext.AudioContext ?? windowWithAudioContext.webkitAudioContext;
+    const AudioContextCtor =
+      windowWithAudioContext.AudioContext ??
+      windowWithAudioContext.webkitAudioContext;
     if (!AudioContextCtor) {
       setMeteringError("AudioContext is unavailable in this runtime.");
       return undefined;
@@ -616,10 +886,14 @@ export function App() {
     let animationFrameId = 0;
     let mediaStream: MediaStream | null = null;
     let audioContext: AudioContext | null = null;
+    let mediaRecorder: MediaRecorder | null = null;
 
     const stopMetering = () => {
       if (animationFrameId) {
         window.cancelAnimationFrame(animationFrameId);
+      }
+      if (mediaRecorder && mediaRecorder.state !== "inactive") {
+        mediaRecorder.stop();
       }
       mediaStream?.getTracks().forEach((track) => {
         track.stop();
@@ -632,8 +906,11 @@ export function App() {
     const startMetering = async () => {
       try {
         mediaStream = await mediaDevices.getUserMedia({
-          audio: createInputDeviceConstraints(audioDevices.selectedInputId),
-          video: false
+          audio: createInputDeviceConstraints(
+            audioDevices.selectedInputId,
+            dspPipeline.settings,
+          ),
+          video: false,
         });
         if (cancelled) {
           stopMetering();
@@ -648,6 +925,68 @@ export function App() {
         const samples = new Float32Array(analyser.fftSize);
 
         setMeteringError(null);
+        voiceCaptureMimeTypeRef.current = null;
+        setVoicePlaybackError(null);
+
+        if (
+          typeof MediaRecorder !== "undefined" &&
+          window.voice?.send &&
+          appState.connection.status === "connected"
+        ) {
+          try {
+            const preferredMimeType = PREFERRED_VOICE_CAPTURE_MIME_TYPES.find(
+              (mimeType) => MediaRecorder.isTypeSupported(mimeType),
+            );
+            mediaRecorder = preferredMimeType
+              ? new MediaRecorder(mediaStream, {
+                  mimeType: preferredMimeType,
+                  audioBitsPerSecond: 64_000,
+                })
+              : new MediaRecorder(mediaStream);
+            voiceCaptureMimeTypeRef.current =
+              mediaRecorder.mimeType || preferredMimeType || null;
+            if (!voiceCaptureMimeTypeRef.current) {
+              setVoicePlaybackError(
+                "Voice playback format is unavailable in this runtime.",
+              );
+            }
+            mediaRecorder.addEventListener("dataavailable", (event) => {
+              if (
+                cancelled ||
+                event.data.size === 0 ||
+                !voiceActivationRef.current.isTransmitting ||
+                !window.voice?.send
+              ) {
+                return;
+              }
+
+              void event.data
+                .arrayBuffer()
+                .then((buffer) => window.voice?.send(new Uint8Array(buffer)))
+                .catch((error) => {
+                  if (!cancelled) {
+                    setVoicePlaybackError(
+                      error instanceof Error
+                        ? error.message
+                        : "Unable to stream encoded voice.",
+                    );
+                  }
+                });
+            });
+            mediaRecorder.addEventListener("error", () => {
+              if (!cancelled) {
+                setVoicePlaybackError("Voice capture encoding failed.");
+              }
+            });
+            mediaRecorder.start(VOICE_CAPTURE_TIMESLICE_MS);
+          } catch (error) {
+            setVoicePlaybackError(
+              error instanceof Error
+                ? error.message
+                : "Voice capture encoding is unavailable.",
+            );
+          }
+        }
 
         const tick = () => {
           if (cancelled) {
@@ -661,17 +1000,22 @@ export function App() {
           }
 
           const rms = Math.sqrt(squaredSum / samples.length);
-          const normalizedLevel = Math.min(1, rms * RMS_TO_LEVEL_SCALING_FACTOR);
+          const normalizedLevel = Math.min(
+            1,
+            rms * RMS_TO_LEVEL_SCALING_FACTOR,
+          );
 
-          setVoiceActivation((currentState) => stepVoiceActivation(currentState, {
-            inputLevel: normalizedLevel,
-            captureEnabled: audioSettingsRef.current.captureEnabled,
-            selfMuted: audioSettingsRef.current.selfMuted,
-            pushToTalk: audioSettingsRef.current.pushToTalk,
-            pushToTalkPressed: pushToTalkPressedRef.current,
-            inputGain: audioSettingsRef.current.inputGain,
-            outputGain: audioSettingsRef.current.outputGain
-          }));
+          setVoiceActivation((currentState) =>
+            stepVoiceActivation(currentState, {
+              inputLevel: normalizedLevel,
+              captureEnabled: audioSettingsRef.current.captureEnabled,
+              selfMuted: audioSettingsRef.current.selfMuted,
+              pushToTalk: audioSettingsRef.current.pushToTalk,
+              pushToTalkPressed: pushToTalkPressedRef.current,
+              inputGain: audioSettingsRef.current.inputGain,
+              outputGain: audioSettingsRef.current.outputGain,
+            }),
+          );
           animationFrameId = window.requestAnimationFrame(tick);
         };
 
@@ -681,16 +1025,22 @@ export function App() {
           return;
         }
 
-        setMeteringError(error instanceof Error ? error.message : "Microphone metering is unavailable.");
-        setVoiceActivation((currentState) => stepVoiceActivation(currentState, {
-          inputLevel: 0,
-          captureEnabled: appState.audio.captureEnabled,
-          selfMuted: appState.audio.selfMuted,
-          pushToTalk: appState.preferences.pushToTalk,
-          pushToTalkPressed: pushToTalkPressedRef.current,
-          inputGain: appState.audio.inputGain,
-          outputGain: appState.audio.outputGain
-        }));
+        setMeteringError(
+          error instanceof Error
+            ? error.message
+            : "Microphone metering is unavailable.",
+        );
+        setVoiceActivation((currentState) =>
+          stepVoiceActivation(currentState, {
+            inputLevel: 0,
+            captureEnabled: appState.audio.captureEnabled,
+            selfMuted: appState.audio.selfMuted,
+            pushToTalk: appState.preferences.pushToTalk,
+            pushToTalkPressed: pushToTalkPressedRef.current,
+            inputGain: appState.audio.inputGain,
+            outputGain: appState.audio.outputGain,
+          }),
+        );
       }
     };
 
@@ -705,9 +1055,11 @@ export function App() {
     appState.audio.inputGain,
     appState.audio.outputGain,
     appState.audio.selfMuted,
+    appState.connection.status,
     appState.preferences.pushToTalk,
     audioDevices.selectedInputId,
-    mediaDevices
+    dspPipeline.settings,
+    mediaDevices,
   ]);
 
   useEffect(() => {
@@ -729,7 +1081,11 @@ export function App() {
         syncFormState(nextState);
       } catch (error) {
         if (active) {
-          setFormError(error instanceof Error ? error.message : "Unable to load desktop state.");
+          setFormError(
+            error instanceof Error
+              ? error.message
+              : "Unable to load desktop state.",
+          );
         }
       } finally {
         if (active) {
@@ -787,9 +1143,12 @@ export function App() {
     };
   }, []);
 
-  useEffect(() => () => {
-    clearFallbackLiveSessionTimers();
-  }, [clearFallbackLiveSessionTimers]);
+  useEffect(
+    () => () => {
+      clearFallbackLiveSessionTimers();
+    },
+    [clearFallbackLiveSessionTimers],
+  );
 
   const secureTransportLabel = useMemo(() => {
     if (handshakeState === "running") {
@@ -821,74 +1180,106 @@ export function App() {
       setSelfTestResult(result);
       setHandshakeState("success");
     } catch (error) {
-      setSelfTestError(error instanceof Error ? error.message : "Unknown handshake failure");
+      setSelfTestError(
+        error instanceof Error ? error.message : "Unknown handshake failure",
+      );
       setHandshakeState("error");
     }
   };
 
   const activeChannel = useMemo(
-    () => appState.channels.find((channel) => channel.id === appState.activeChannelId) ?? null,
-    [appState.activeChannelId, appState.channels]
+    () =>
+      appState.channels.find(
+        (channel) => channel.id === appState.activeChannelId,
+      ) ?? null,
+    [appState.activeChannelId, appState.channels],
   );
   const selfParticipant = useMemo(
-    () => appState.participants.find((participant) => participant.isSelf) ?? null,
-    [appState.participants]
+    () =>
+      appState.participants.find((participant) => participant.isSelf) ?? null,
+    [appState.participants],
   );
   const selfParticipantChannel = useMemo(
-    () => selfParticipant
-      ? appState.channels.find((channel) => channel.id === selfParticipant.channelId) ?? null
-      : null,
-    [appState.channels, selfParticipant]
+    () =>
+      selfParticipant
+        ? (appState.channels.find(
+            (channel) => channel.id === selfParticipant.channelId,
+          ) ?? null)
+        : null,
+    [appState.channels, selfParticipant],
   );
   const activeParticipants = useMemo(
-    () => appState.participants.filter((participant) => participant.channelId === appState.activeChannelId),
-    [appState.activeChannelId, appState.participants]
+    () =>
+      appState.participants.filter(
+        (participant) => participant.channelId === appState.activeChannelId,
+      ),
+    [appState.activeChannelId, appState.participants],
   );
   const activeMessages = useMemo(
-    () => appState.messages.filter((message) => (
-      message.channelId === null || message.channelId === appState.activeChannelId
-    )),
-    [appState.activeChannelId, appState.messages]
+    () =>
+      appState.messages.filter(
+        (message) =>
+          message.channelId === null ||
+          message.channelId === appState.activeChannelId,
+      ),
+    [appState.activeChannelId, appState.messages],
   );
   const selectedParticipant = useMemo(
-    () => appState.participants.find((participant) => participant.id === selectedParticipantId) ?? null,
-    [appState.participants, selectedParticipantId]
+    () =>
+      appState.participants.find(
+        (participant) => participant.id === selectedParticipantId,
+      ) ?? null,
+    [appState.participants, selectedParticipantId],
   );
   const selectedParticipantChannel = useMemo(
-    () => selectedParticipant
-      ? appState.channels.find((channel) => channel.id === selectedParticipant.channelId) ?? null
-      : null,
-    [appState.channels, selectedParticipant]
+    () =>
+      selectedParticipant
+        ? (appState.channels.find(
+            (channel) => channel.id === selectedParticipant.channelId,
+          ) ?? null)
+        : null,
+    [appState.channels, selectedParticipant],
   );
   const connectionError = formError ?? appState.connection.error;
-  const connectionServerAddress = serverAddress.trim() || appState.connection.serverAddress;
+  const connectionServerAddress =
+    serverAddress.trim() || appState.connection.serverAddress;
   const connectionNickname = nickname.trim() || appState.connection.nickname;
-  const connectionErrorKey = [connectionError, connectionServerAddress, connectionNickname].join("::");
+  const connectionErrorKey = [
+    connectionError,
+    connectionServerAddress,
+    connectionNickname,
+  ].join("::");
   const isElectronBridgeAvailable = Boolean(window.app?.getState);
   const voiceActivationLabel = useMemo(
     () => getVoiceActivationLabel(voiceActivation.mode),
-    [voiceActivation.mode]
+    [voiceActivation.mode],
   );
   const pushToTalkShortcutLabel = useMemo(
     () => formatPushToTalkShortcut(appState.preferences.pushToTalkShortcut),
-    [appState.preferences.pushToTalkShortcut]
+    [appState.preferences.pushToTalkShortcut],
   );
   const quickActionTalkModeLabel = useMemo(
-    () => describeTalkMode({
-      pushToTalk: appState.preferences.pushToTalk,
+    () =>
+      describeTalkMode({
+        pushToTalk: appState.preferences.pushToTalk,
+        pushToTalkPressed,
+        shortcutLabel: pushToTalkShortcutLabel,
+        voiceActivation,
+      }),
+    [
+      appState.preferences.pushToTalk,
       pushToTalkPressed,
-      shortcutLabel: pushToTalkShortcutLabel,
-      voiceActivation
-    }),
-    [appState.preferences.pushToTalk, pushToTalkPressed, pushToTalkShortcutLabel, voiceActivation]
+      pushToTalkShortcutLabel,
+      voiceActivation,
+    ],
   );
   const latencyQuickActionLabel = useMemo(
     () => describeQuickActionLatency(appState.telemetry, voiceTransportStatus),
-    [appState.telemetry, voiceTransportStatus]
+    [appState.telemetry, voiceTransportStatus],
   );
   const nextNavigableChannel = useMemo(
     () => findNextNavigableChannel(appState.channels, appState.activeChannelId),
-    [appState.activeChannelId, appState.channels]
+    [appState.activeChannelId, appState.channels],
   );
   const localNicknames = appState.preferences.localNicknames;
   const shortcutBindings = appState.preferences.shortcutBindings;
@@ -899,7 +1290,7 @@ export function App() {
 
     return buildFailedConnectionRecovery(connectionError, {
       serverAddress: connectionServerAddress,
-      nickname: connectionNickname
+      nickname: connectionNickname,
     });
   }, [connectionError, connectionNickname, connectionServerAddress]);
 
@@ -946,12 +1337,14 @@ export function App() {
       try {
         const nextState = await window.app.connect({
           serverAddress: normalizedServerAddress,
-          nickname: normalizedNickname
+          nickname: normalizedNickname,
         });
         setAppState(nextState);
         setChatDraft("");
       } catch (error) {
-        setFormError(error instanceof Error ? error.message : "Unable to join voice.");
+        setFormError(
+          error instanceof Error ? error.message : "Unable to join voice.",
+        );
       }
       return;
     }
@@ -962,17 +1355,22 @@ export function App() {
         status: "connecting",
         serverAddress: normalizedServerAddress,
         nickname: normalizedNickname,
-        error: null
+        error: null,
       },
-      recentServers: buildRecentServers(currentState.recentServers, normalizedServerAddress)
+      recentServers: buildRecentServers(
+        currentState.recentServers,
+        normalizedServerAddress,
+      ),
     }));
 
     window.setTimeout(() => {
-      updateLocalAppState((currentState) => createFallbackConnectedState(
-        currentState,
-        normalizedServerAddress,
-        normalizedNickname
-      ));
+      updateLocalAppState((currentState) =>
+        createFallbackConnectedState(
+          currentState,
+          normalizedServerAddress,
+          normalizedNickname,
+        ),
+      );
       startFallbackLiveSession(normalizedNickname);
       setChatDraft("");
     }, 250);
@@ -994,7 +1392,7 @@ export function App() {
       connection: {
         ...currentState.connection,
         status: "disconnected",
-        error: null
+        error: null,
       },
       channels: [],
       activeChannelId: null,
@@ -1003,8 +1401,8 @@ export function App() {
       telemetry: {
         latencyMs: null,
         jitterMs: null,
-        packetLoss: null
-      }
+        packetLoss: null,
+      },
     }));
   };
 
@@ -1017,11 +1415,11 @@ export function App() {
 
     updateLocalAppState((currentState) => ({
       ...currentState,
-      activeChannelId: currentState.channels.some((channel) => (
-        channel.id === channelId && channel.permissions.enter
-      ))
+      activeChannelId: currentState.channels.some(
+        (channel) => channel.id === channelId && channel.permissions.enter,
+      )
         ? channelId
-        : currentState.activeChannelId
+        : currentState.activeChannelId,
     }));
   };
 
@@ -1033,20 +1431,26 @@ export function App() {
     }
 
     updateLocalAppState((currentState) => {
-      const nextChannel = currentState.channels.find((channel) => channel.id === channelId);
+      const nextChannel = currentState.channels.find(
+        (channel) => channel.id === channelId,
+      );
       if (!nextChannel || !nextChannel.permissions.enter) {
         return currentState;
       }
 
-      const currentSelfParticipant = currentState.participants.find((participant) => participant.isSelf);
-      const nextParticipants = currentState.participants.map((participant) => (
+      const currentSelfParticipant = currentState.participants.find(
+        (participant) => participant.isSelf,
+      );
+      const nextParticipants = currentState.participants.map((participant) =>
         currentSelfParticipant && participant.id === currentSelfParticipant.id
           ? { ...participant, channelId }
-          : participant
-      ));
+          : participant,
+      );
       const participantIdsByChannel = new Map<string, string[]>();
       for (const participant of nextParticipants) {
-        const participantIds = participantIdsByChannel.get(participant.channelId);
+        const participantIds = participantIdsByChannel.get(
+          participant.channelId,
+        );
         if (participantIds) {
           participantIds.push(participant.id);
         } else {
@@ -1060,8 +1464,8 @@ export function App() {
         participants: nextParticipants,
         channels: currentState.channels.map((channel) => ({
           ...channel,
-          participantIds: participantIdsByChannel.get(channel.id) ?? []
-        }))
+          participantIds: participantIdsByChannel.get(channel.id) ?? [],
+        })),
       };
     });
   };
@@ -1074,9 +1478,12 @@ export function App() {
     await selectChannel(nextNavigableChannel.id);
   };
 
-  const updateShortcutBindings = useCallback((nextShortcutBindings: AppClientShortcutBinding[]) => {
-    void updatePreferences({ shortcutBindings: nextShortcutBindings });
-  }, [updatePreferences]);
+  const updateShortcutBindings = useCallback(
+    (nextShortcutBindings: AppClientShortcutBinding[]) => {
+      void updatePreferences({ shortcutBindings: nextShortcutBindings });
+    },
+    [updatePreferences],
+  );
 
   const addShortcutBinding = useCallback(() => {
     const nextTarget = findNextShortcutTarget(shortcutBindings);
@@ -1086,59 +1493,81 @@ export function App() {
 
     updateShortcutBindings([
       ...shortcutBindings,
-      getDefaultShortcutBinding(nextTarget)
+      getDefaultShortcutBinding(nextTarget),
     ]);
   }, [shortcutBindings, updateShortcutBindings]);
 
-  const removeShortcutBinding = useCallback((bindingTarget: AppClientShortcutBinding["target"]) => {
-    updateShortcutBindings(shortcutBindings.filter((binding) => binding.target !== bindingTarget));
-  }, [shortcutBindings, updateShortcutBindings]);
+  const removeShortcutBinding = useCallback(
+    (bindingTarget: AppClientShortcutBinding["target"]) => {
+      updateShortcutBindings(
+        shortcutBindings.filter((binding) => binding.target !== bindingTarget),
+      );
+    },
+    [shortcutBindings, updateShortcutBindings],
+  );
 
-  const updateShortcutBindingTarget = useCallback((
-    bindingTarget: AppClientShortcutBinding["target"],
-    nextTarget: AppClientShortcutBinding["target"]
-  ) => {
-    updateShortcutBindings(shortcutBindings.map((binding) => (
-      binding.target === bindingTarget
-        ? { ...binding, target: nextTarget }
-        : binding
-    )));
-  }, [shortcutBindings, updateShortcutBindings]);
+  const updateShortcutBindingTarget = useCallback(
+    (
+      bindingTarget: AppClientShortcutBinding["target"],
+      nextTarget: AppClientShortcutBinding["target"],
+    ) => {
+      updateShortcutBindings(
+        shortcutBindings.map((binding) =>
+          binding.target === bindingTarget
+            ? { ...binding, target: nextTarget }
+            : binding,
+        ),
+      );
+    },
+    [shortcutBindings, updateShortcutBindings],
+  );
 
-  const updateShortcutBindingShortcut = useCallback((
-    bindingTarget: AppClientShortcutBinding["target"],
-    nextShortcut: string
-  ) => {
-    updateShortcutBindings(shortcutBindings.map((binding) => (
-      binding.target === bindingTarget
-        ? { ...binding, shortcut: nextShortcut }
-        : binding
-    )));
-  }, [shortcutBindings, updateShortcutBindings]);
+  const updateShortcutBindingShortcut = useCallback(
+    (
+      bindingTarget: AppClientShortcutBinding["target"],
+      nextShortcut: string,
+    ) => {
+      updateShortcutBindings(
+        shortcutBindings.map((binding) =>
+          binding.target === bindingTarget
+            ? { ...binding, shortcut: nextShortcut }
+            : binding,
+        ),
+      );
+    },
+    [shortcutBindings, updateShortcutBindings],
+  );
 
-  const handleShortcutAction = useCallback(async (target: AppClientShortcutBinding["target"]) => {
-    switch (target) {
-      case "toggleMute":
-        await updateAudioSettings({ selfMuted: !appState.audio.selfMuted });
-        break;
-      case "selectSystemOutput":
-        await updateAudioSettings({ outputDeviceId: SYSTEM_DEFAULT_DEVICE_ID });
-        break;
-      case "toggleLatencyDetails":
-        await updatePreferences({ showLatencyDetails: !appState.preferences.showLatencyDetails });
-        break;
-      case "cycleChannel":
-        await cycleChannel();
-        break;
-    }
-  }, [
-    appState.audio.selfMuted,
-    appState.preferences.showLatencyDetails,
-    appState.preferences.pushToTalk,
-    cycleChannel,
-    updateAudioSettings,
-    updatePreferences
-  ]);
+  const handleShortcutAction = useCallback(
+    async (target: AppClientShortcutBinding["target"]) => {
+      switch (target) {
+        case "toggleMute":
+          await updateAudioSettings({ selfMuted: !appState.audio.selfMuted });
+          break;
+        case "selectSystemOutput":
+          await updateAudioSettings({
+            outputDeviceId: SYSTEM_DEFAULT_DEVICE_ID,
+          });
+          break;
+        case "toggleLatencyDetails":
+          await updatePreferences({
+            showLatencyDetails: !appState.preferences.showLatencyDetails,
+          });
+          break;
+        case "cycleChannel":
+          await cycleChannel();
+          break;
+      }
+    },
+    [
+      appState.audio.selfMuted,
+      appState.preferences.showLatencyDetails,
+      appState.preferences.pushToTalk,
+      cycleChannel,
+      updateAudioSettings,
+      updatePreferences,
+    ],
+  );
 
   const exportDiagnostics = async () => {
     if (!window.app?.exportDiagnostics || isExportingDiagnostics) {
@@ -1157,10 +1586,16 @@ export function App() {
           mode: voiceActivation.mode,
           isTransmitting: voiceActivation.isTransmitting,
           meteringError,
-          availableInputDevices: audioDevices.input.length,
-          availableOutputDevices: audioDevices.output.length,
-          outputRoutingReady
-        }
+          playbackError: voicePlaybackError,
+          transportState: voiceTransportStatus?.state ?? "disconnected",
+          averageRoundTripMs: voiceTransportStatus?.averageRoundTripMs ?? null,
+          packetsSent: voiceTransportStatus?.packetsSent ?? null,
+          packetsReceived: voiceTransportStatus?.packetsReceived ?? null,
+          packetLoss: voiceTransportStatus?.packetLoss ?? null,
+          availableInputDevices: audioDevices.inputs.length,
+          availableOutputDevices: audioDevices.outputs.length,
+          outputRoutingReady,
+        },
       });
 
       if (result.canceled) {
@@ -1170,7 +1605,11 @@ export function App() {
 
       setDiagnosticsMessage(`Diagnostics saved to ${result.filePath}.`);
     } catch (error) {
-      setDiagnosticsError(error instanceof Error ? error.message : "Unable to export diagnostics.");
+      setDiagnosticsError(
+        error instanceof Error
+          ? error.message
+          : "Unable to export diagnostics.",
+      );
     } finally {
       setIsExportingDiagnostics(false);
     }
@@ -1189,10 +1628,12 @@ export function App() {
         return;
       }
 
-      const matchedBinding = shortcutBindings.find((binding) => (
-        (reservedShortcut === null || binding.shortcut !== reservedShortcut)
-        && matchesPushToTalkShortcut(binding.shortcut, event)
-      ));
+      const matchedBinding = shortcutBindings.find(
+        (binding) =>
+          (reservedShortcut === null ||
+            binding.shortcut !== reservedShortcut) &&
+          matchesPushToTalkShortcut(binding.shortcut, event),
+      );
 
       if (!matchedBinding) {
         return;
@@ -1210,7 +1651,7 @@ export function App() {
     appState.preferences.pushToTalk,
     appState.preferences.pushToTalkShortcut,
     handleShortcutAction,
-    shortcutBindings
+    shortcutBindings,
   ]);
 
   const openDiagnostics = () => {
@@ -1220,7 +1661,7 @@ export function App() {
 
     diagnosticsSectionRef.current?.scrollIntoView({
       behavior: "smooth",
-      block: "start"
+      block: "start",
     });
   };
 
@@ -1238,16 +1679,22 @@ export function App() {
         setAppState(nextState);
         setChatDraft("");
       } catch (error) {
-        setFormError(error instanceof Error ? error.message : "Unable to send chat.");
+        setFormError(
+          error instanceof Error ? error.message : "Unable to send chat.",
+        );
       }
       return;
     }
 
     try {
-      updateLocalAppState((currentState) => appendLocalChatMessageState(currentState, chatDraft));
+      updateLocalAppState((currentState) =>
+        appendLocalChatMessageState(currentState, chatDraft),
+      );
       setChatDraft("");
     } catch (error) {
-      setFormError(error instanceof Error ? error.message : "Unable to send chat.");
+      setFormError(
+        error instanceof Error ? error.message : "Unable to send chat.",
+      );
     }
   };
 
@@ -1260,12 +1707,17 @@ export function App() {
       localNicknames: withParticipantLocalNickname(
         localNicknames,
         selectedParticipant.id,
-        participantNicknameDraft
-      )
+        participantNicknameDraft,
+      ),
     });
-  }, [localNicknames, participantNicknameDraft, selectedParticipant, updatePreferences]);
+  }, [
+    localNicknames,
+    participantNicknameDraft,
+    selectedParticipant,
+    updatePreferences,
+  ]);
 
-  const applyPreset = (settings: typeof audioPresets[number]["settings"]) => {
+  const applyPreset = (settings: (typeof audioPresets)[number]["settings"]) => {
     persistDspSettings(settings);
     setDspPipelineState(createDspPipeline(settings));
   };
@@ -1278,7 +1730,11 @@ export function App() {
           <audio ref={outputPreviewRef} preload="none" />
           <Flex direction="column" gap="6">
             <Card className="hero-card fade-in">
-              <Flex direction={{ initial: "column", md: "row" }} gap="5" align="start">
+              <Flex
+                direction={{ initial: "column", md: "row" }}
+                gap="5"
+                align="start"
+              >
                 <Box style={{ flex: 1 }}>
                   <Flex direction="column" gap="3">
                     <Badge size="2" variant="solid" className="pulse">
@@ -1286,7 +1742,8 @@ export function App() {
                     </Badge>
                     <Heading size="8">Mumble desktop client</Heading>
                     <Text size="3" color="gray">
-                      Connect to a server, switch channels, and manage audio without leaving the renderer.
+                      Connect to a server, switch channels, and manage audio
+                      without leaving the renderer.
                     </Text>
                     <form
                       onSubmit={(event) => {
@@ -1303,7 +1760,9 @@ export function App() {
                           onChange={(event) => {
                             setServerAddress(event.target.value);
                           }}
-                          disabled={isConnectionBusy(appState.connection.status)}
+                          disabled={isConnectionBusy(
+                            appState.connection.status,
+                          )}
                           list="recent-servers"
                         >
                           <TextField.Slot>
@@ -1323,13 +1782,21 @@ export function App() {
                           onChange={(event) => {
                             setNickname(event.target.value);
                           }}
-                          disabled={isConnectionBusy(appState.connection.status)}
+                          disabled={isConnectionBusy(
+                            appState.connection.status,
+                          )}
                         >
                           <TextField.Slot>
                             <ChatBubbleIcon />
                           </TextField.Slot>
                         </TextField.Root>
-                        <Button size="3" type="submit" disabled={isConnectionBusy(appState.connection.status)}>
+                        <Button
+                          size="3"
+                          type="submit"
+                          disabled={isConnectionBusy(
+                            appState.connection.status,
+                          )}
+                        >
                           {appState.connection.status === "authenticating"
                             ? "Authenticating…"
                             : appState.connection.status === "connecting"
@@ -1343,7 +1810,10 @@ export function App() {
                           onClick={() => {
                             void rememberServer(serverAddress);
                           }}
-                          disabled={isConnectionBusy(appState.connection.status) || trimmedServerAddress.length === 0}
+                          disabled={
+                            isConnectionBusy(appState.connection.status) ||
+                            trimmedServerAddress.length === 0
+                          }
                         >
                           Save server
                         </Button>
@@ -1354,13 +1824,21 @@ export function App() {
                           onClick={() => {
                             void disconnectFromServer();
                           }}
-                          disabled={appState.connection.status === "disconnected" && !appState.connection.error}
+                          disabled={
+                            appState.connection.status === "disconnected" &&
+                            !appState.connection.error
+                          }
                         >
                           Disconnect
                         </Button>
                       </Flex>
                       {appState.recentServers.length > 0 ? (
-                        <Flex gap="2" align="center" wrap="wrap" style={{ marginTop: 12 }}>
+                        <Flex
+                          gap="2"
+                          align="center"
+                          wrap="wrap"
+                          style={{ marginTop: 12 }}
+                        >
                           <Text size="2" color="gray">
                             Saved servers
                           </Text>
@@ -1368,12 +1846,18 @@ export function App() {
                             <Button
                               key={recentServer}
                               size="1"
-                              variant={trimmedServerAddress === recentServer ? "solid" : "soft"}
+                              variant={
+                                trimmedServerAddress === recentServer
+                                  ? "solid"
+                                  : "soft"
+                              }
                               type="button"
                               onClick={() => {
                                 loadRecentServer(recentServer);
                               }}
-                              disabled={isConnectionBusy(appState.connection.status)}
+                              disabled={isConnectionBusy(
+                                appState.connection.status,
+                              )}
                             >
                               {recentServer}
                             </Button>
@@ -1383,33 +1867,81 @@ export function App() {
                     </form>
                     <Flex gap="3" align="center" wrap="wrap">
                       <StatusChip
-                        status={appState.connection.status === "connected" ? "live" : appState.connection.status === "error" ? "muted" : "idle"}
+                        status={
+                          appState.connection.status === "connected"
+                            ? "live"
+                            : appState.connection.status === "error"
+                              ? "muted"
+                              : "idle"
+                        }
                         label={statusCopy[appState.connection.status]}
                       />
-                      <StatusChip status="idle" label={`Running on ${platformLabel}`} />
                       <StatusChip
-                        status={handshakeState === "success" ? "live" : handshakeState === "error" ? "muted" : "idle"}
+                        status="idle"
+                        label={`Running on ${platformLabel}`}
+                      />
+                      <StatusChip
+                        status={
+                          handshakeState === "success"
+                            ? "live"
+                            : handshakeState === "error"
+                              ? "muted"
+                              : "idle"
+                        }
                         label={secureTransportLabel}
                       />
                       <StatusChip
-                        status={voiceActivation.isTransmitting ? "live" : voiceActivation.mode === "muted" ? "muted" : "idle"}
+                        status={
+                          voiceActivation.isTransmitting
+                            ? "live"
+                            : voiceActivation.mode === "muted"
+                              ? "muted"
+                              : "idle"
+                        }
                         label={voiceActivationLabel}
                       />
+                      {voiceTransportStatus ? (
+                        <StatusChip
+                          status={
+                            voiceTransportStatus.state === "connected"
+                              ? "live"
+                              : voiceTransportStatus.lastError
+                                ? "muted"
+                                : "idle"
+                          }
+                          label={
+                            voiceTransportStatus.state === "connected"
+                              ? "voice loopback ready"
+                              : voiceTransportStatus.lastError
+                                ? "voice link error"
+                                : "voice link idle"
+                          }
+                        />
+                      ) : null}
                       {appState.telemetry.jitterMs !== null ? (
-                        <StatusChip status="live" label={`${appState.telemetry.jitterMs} ms jitter`} />
+                        <StatusChip
+                          status="live"
+                          label={`${appState.telemetry.jitterMs} ms jitter`}
+                        />
                       ) : null}
                     </Flex>
-                    {connectionError && connectionRecovery && dismissedConnectionErrorKey !== connectionErrorKey ? (
+                    {connectionError &&
+                    connectionRecovery &&
+                    dismissedConnectionErrorKey !== connectionErrorKey ? (
                       <Card className="section-card">
                         <Flex direction="column" gap="3">
                           <SectionHeader
                             title="Connection recovery"
                             subtitle={connectionRecovery.summary}
                           />
-                          <Text size="2" color="ruby">{connectionError}</Text>
+                          <Text size="2" color="ruby">
+                            {connectionError}
+                          </Text>
                           <Flex direction="column" gap="2">
                             {connectionRecovery.steps.map((step) => (
-                              <Text key={step} size="2" color="gray">• {step}</Text>
+                              <Text key={step} size="2" color="gray">
+                                • {step}
+                              </Text>
                             ))}
                           </Flex>
                           <Flex gap="3" wrap="wrap">
@@ -1418,7 +1950,9 @@ export function App() {
                               onClick={() => {
                                 void connectToServer();
                               }}
-                              disabled={isConnectionBusy(appState.connection.status)}
+                              disabled={isConnectionBusy(
+                                appState.connection.status,
+                              )}
                             >
                               Retry connection
                             </Button>
@@ -1434,7 +1968,9 @@ export function App() {
                               variant="ghost"
                               onClick={() => {
                                 setFormError(null);
-                                setDismissedConnectionErrorKey(connectionErrorKey);
+                                setDismissedConnectionErrorKey(
+                                  connectionErrorKey,
+                                );
                               }}
                             >
                               Dismiss
@@ -1444,21 +1980,28 @@ export function App() {
                       </Card>
                     ) : null}
                     {isLoadingAppState ? (
-                      <Text size="2" color="gray">Loading saved desktop state…</Text>
+                      <Text size="2" color="gray">
+                        Loading saved desktop state…
+                      </Text>
                     ) : null}
                     {!isElectronBridgeAvailable ? (
                       <Text size="2" color="gray">
-                        Open the Electron shell to persist session state, recent servers, and preferences.
+                        Open the Electron shell to persist session state, recent
+                        servers, and preferences.
                       </Text>
                     ) : null}
                   </Flex>
                 </Box>
                 <Card className="section-card" style={{ minWidth: 300 }}>
                   <Flex direction="column" gap="3">
-                    <SectionHeader title="Audio devices" subtitle="Hot-swap aware routing" />
+                    <SectionHeader
+                      title="Audio devices"
+                      subtitle="Hot-swap aware routing"
+                    />
                     <Flex align="center" justify="between" gap="3" wrap="wrap">
                       <Badge size="2" variant="outline">
-                        {audioDevices.detectedInputCount} inputs · {audioDevices.detectedOutputCount} outputs
+                        {audioDevices.detectedInputCount} inputs ·{" "}
+                        {audioDevices.detectedOutputCount} outputs
                       </Badge>
                       <Button
                         size="2"
@@ -1466,21 +2009,27 @@ export function App() {
                         onClick={() => {
                           void refreshAudioDevices();
                         }}
-                        disabled={!audioDevices.supported || isRefreshingDevices}
+                        disabled={
+                          !audioDevices.supported || isRefreshingDevices
+                        }
                       >
                         {isRefreshingDevices ? "Refreshing…" : "Refresh"}
                       </Button>
                     </Flex>
                     <Flex direction="column" gap="2">
                       <label className="device-field">
-                        <Text size="2" color="gray">Input device</Text>
+                        <Text size="2" color="gray">
+                          Input device
+                        </Text>
                         <select
                           className="device-select"
                           value={audioDevices.selectedInputId}
                           onChange={(event) => {
                             const nextValue = event.target.value;
                             setSelectedInputId(nextValue);
-                            void updateAudioSettings({ inputDeviceId: nextValue });
+                            void updateAudioSettings({
+                              inputDeviceId: nextValue,
+                            });
                           }}
                           disabled={!audioDevices.supported}
                         >
@@ -1492,14 +2041,18 @@ export function App() {
                         </select>
                       </label>
                       <label className="device-field">
-                        <Text size="2" color="gray">Output device</Text>
+                        <Text size="2" color="gray">
+                          Output device
+                        </Text>
                         <select
                           className="device-select"
                           value={audioDevices.selectedOutputId}
                           onChange={(event) => {
                             const nextValue = event.target.value;
                             setSelectedOutputId(nextValue);
-                            void updateAudioSettings({ outputDeviceId: nextValue });
+                            void updateAudioSettings({
+                              outputDeviceId: nextValue,
+                            });
                           }}
                           disabled={!audioDevices.supported}
                         >
@@ -1517,7 +2070,9 @@ export function App() {
                         <Switch
                           checked={appState.audio.captureEnabled}
                           onCheckedChange={(checked) => {
-                            void updateAudioSettings({ captureEnabled: checked });
+                            void updateAudioSettings({
+                              captureEnabled: checked,
+                            });
                           }}
                         />
                       </Flex>
@@ -1531,26 +2086,34 @@ export function App() {
                         />
                       </Flex>
                       <label className="device-field">
-                        <Text size="2" color="gray">Input gain · {appState.audio.inputGain}%</Text>
+                        <Text size="2" color="gray">
+                          Input gain · {appState.audio.inputGain}%
+                        </Text>
                         <input
                           type="range"
                           min="0"
                           max="150"
                           value={appState.audio.inputGain}
                           onChange={(event) => {
-                            void updateAudioSettings({ inputGain: Number(event.target.value) });
+                            void updateAudioSettings({
+                              inputGain: Number(event.target.value),
+                            });
                           }}
                         />
                       </label>
                       <label className="device-field">
-                        <Text size="2" color="gray">Output gain · {appState.audio.outputGain}%</Text>
+                        <Text size="2" color="gray">
+                          Output gain · {appState.audio.outputGain}%
+                        </Text>
                         <input
                           type="range"
                           min="0"
                           max="150"
                           value={appState.audio.outputGain}
                           onChange={(event) => {
-                            void updateAudioSettings({ outputGain: Number(event.target.value) });
+                            void updateAudioSettings({
+                              outputGain: Number(event.target.value),
+                            });
                           }}
                         />
                       </label>
@@ -1560,7 +2123,13 @@ export function App() {
                           <Badge
                             size="2"
                             variant="soft"
-                            color={voiceActivation.isTransmitting ? "green" : voiceActivation.mode === "muted" ? "red" : "gray"}
+                            color={
+                              voiceActivation.isTransmitting
+                                ? "green"
+                                : voiceActivation.mode === "muted"
+                                  ? "red"
+                                  : "gray"
+                            }
                           >
                             {voiceActivationLabel}
                           </Badge>
@@ -1568,8 +2137,12 @@ export function App() {
                         <Box className="meter-stack">
                           <Box className="meter-field">
                             <Flex align="center" justify="between" gap="3">
-                              <Text size="1" color="gray">Input level</Text>
-                              <Text size="1" color="gray">{Math.round(voiceActivation.inputLevel * 100)}%</Text>
+                              <Text size="1" color="gray">
+                                Input level
+                              </Text>
+                              <Text size="1" color="gray">
+                                {Math.round(voiceActivation.inputLevel * 100)}%
+                              </Text>
                             </Flex>
                             <div
                               className="audio-meter"
@@ -1577,15 +2150,26 @@ export function App() {
                               aria-label="Input level meter"
                               aria-valuemin={0}
                               aria-valuemax={100}
-                              aria-valuenow={Math.round(voiceActivation.inputLevel * 100)}
+                              aria-valuenow={Math.round(
+                                voiceActivation.inputLevel * 100,
+                              )}
                             >
-                              <div className="audio-meter-fill" style={{ width: `${voiceActivation.inputLevel * 100}%` }} />
+                              <div
+                                className="audio-meter-fill"
+                                style={{
+                                  width: `${voiceActivation.inputLevel * 100}%`,
+                                }}
+                              />
                             </div>
                           </Box>
                           <Box className="meter-field">
                             <Flex align="center" justify="between" gap="3">
-                              <Text size="1" color="gray">Transmit bus</Text>
-                              <Text size="1" color="gray">{Math.round(voiceActivation.outputLevel * 100)}%</Text>
+                              <Text size="1" color="gray">
+                                Transmit bus
+                              </Text>
+                              <Text size="1" color="gray">
+                                {Math.round(voiceActivation.outputLevel * 100)}%
+                              </Text>
                             </Flex>
                             <div
                               className="audio-meter"
@@ -1593,9 +2177,16 @@ export function App() {
                               aria-label="Transmit level meter"
                               aria-valuemin={0}
                               aria-valuemax={100}
-                              aria-valuenow={Math.round(voiceActivation.outputLevel * 100)}
+                              aria-valuenow={Math.round(
+                                voiceActivation.outputLevel * 100,
+                              )}
                             >
-                              <div className="audio-meter-fill transmit" style={{ width: `${voiceActivation.outputLevel * 100}%` }} />
+                              <div
+                                className="audio-meter-fill transmit"
+                                style={{
+                                  width: `${voiceActivation.outputLevel * 100}%`,
+                                }}
+                              />
                             </div>
                           </Box>
                         </Box>
@@ -1605,7 +2196,14 @@ export function App() {
                             : `Voice activity detection opens the send bus once input crosses ${Math.round(DEFAULT_VAD_START_THRESHOLD * 100)}%.`}
                         </Text>
                         {meteringError ? (
-                          <Text size="1" color="ruby">{meteringError}</Text>
+                          <Text size="1" color="ruby">
+                            {meteringError}
+                          </Text>
+                        ) : null}
+                        {voicePlaybackError ? (
+                          <Text size="1" color="ruby">
+                            {voicePlaybackError}
+                          </Text>
                         ) : null}
                       </Flex>
                     </Flex>
@@ -1623,7 +2221,9 @@ export function App() {
                           : "Preview audio routing follows this selection when the current browser or runtime supports sink switching."}
                       </Text>
                       {audioDevices.error ? (
-                        <Text size="2" color="ruby">{audioDevices.error}</Text>
+                        <Text size="2" color="ruby">
+                          {audioDevices.error}
+                        </Text>
                       ) : null}
                     </Flex>
                   </Flex>
@@ -1636,46 +2236,58 @@ export function App() {
                 <Flex direction="column" gap="4">
                   <SectionHeader
                     title="Channels"
-                    subtitle={activeChannel
-                      ? `Selected room: ${activeChannel.name}${selfParticipantChannel ? ` · joined in ${selfParticipantChannel.name}` : ""}${!activeChannel.permissions.enter ? " · no entry" : ""}`
-                      : "Join a server to browse rooms"}
+                    subtitle={
+                      activeChannel
+                        ? `Selected room: ${activeChannel.name}${selfParticipantChannel ? ` · joined in ${selfParticipantChannel.name}` : ""}${!activeChannel.permissions.enter ? " · no entry" : ""}`
+                        : "Join a server to browse rooms"
+                    }
                   />
                   {appState.channels.length > 0 ? (
                     <Flex direction="column" gap="2">
                       {appState.channels.map((channel) => {
                         const participantCount = channel.participantIds.length;
-                        const isActive = channel.id === appState.activeChannelId;
-                        const isJoined = channel.id === selfParticipant?.channelId;
+                        const isActive =
+                          channel.id === appState.activeChannelId;
+                        const isJoined =
+                          channel.id === selfParticipant?.channelId;
                         return (
-                          <Flex
-                            key={channel.id}
-                            gap="2"
-                            align="stretch"
-                          >
+                          <Flex key={channel.id} gap="2" align="stretch">
                             <Button
                               variant={isActive ? "solid" : "soft"}
                               color={isActive ? "cyan" : undefined}
                               style={{
                                 flex: 1,
                                 justifyContent: "space-between",
-                                paddingLeft: `${BASE_CHANNEL_PADDING + (channel.depth * CHANNEL_INDENT_PER_LEVEL)}px`
+                                paddingLeft: `${BASE_CHANNEL_PADDING + channel.depth * CHANNEL_INDENT_PER_LEVEL}px`,
                               }}
                               onClick={() => {
                                 void selectChannel(channel.id);
                               }}
                               disabled={!channel.permissions.enter}
                             >
-                              <Flex align="center" justify="between" width="100%" gap="3">
+                              <Flex
+                                align="center"
+                                justify="between"
+                                width="100%"
+                                gap="3"
+                              >
                                 <Flex align="center" gap="2" wrap="wrap">
                                   <span>{channel.name}</span>
                                   {!channel.permissions.enter ? (
-                                    <Text as="span" size="1" color="gray">Locked</Text>
+                                    <Text as="span" size="1" color="gray">
+                                      Locked
+                                    </Text>
                                   ) : null}
-                                  {channel.permissions.enter && !channel.permissions.speak ? (
-                                    <Text as="span" size="1" color="gray">Listen only</Text>
+                                  {channel.permissions.enter &&
+                                  !channel.permissions.speak ? (
+                                    <Text as="span" size="1" color="gray">
+                                      Listen only
+                                    </Text>
                                   ) : null}
                                   {isJoined ? (
-                                    <Badge color="green" variant="soft">Joined</Badge>
+                                    <Badge color="green" variant="soft">
+                                      Joined
+                                    </Badge>
                                   ) : null}
                                 </Flex>
                                 <span>{participantCount}</span>
@@ -1709,9 +2321,11 @@ export function App() {
                 <Flex direction="column" gap="4">
                   <SectionHeader
                     title="Participants"
-                    subtitle={activeChannel
-                      ? `${activeParticipants.length} in ${activeChannel.name}${selfParticipantChannel && selfParticipantChannel.id !== activeChannel.id ? ` · You are in ${selfParticipantChannel.name}` : ""}`
-                      : "Live session roster"}
+                    subtitle={
+                      activeChannel
+                        ? `${activeParticipants.length} in ${activeChannel.name}${selfParticipantChannel && selfParticipantChannel.id !== activeChannel.id ? ` · You are in ${selfParticipantChannel.name}` : ""}`
+                        : "Live session roster"
+                    }
                   />
                   {activeParticipants.length > 0 ? (
                     <Flex direction="column" gap="3">
@@ -1719,14 +2333,27 @@ export function App() {
                         <Button
                           key={participant.id}
                           type="button"
-                          variant={selectedParticipantId === participant.id ? "soft" : "ghost"}
+                          variant={
+                            selectedParticipantId === participant.id
+                              ? "soft"
+                              : "ghost"
+                          }
                           onClick={() => {
                             setSelectedParticipantId(participant.id);
                             setFormError(null);
                           }}
-                          style={{ justifyContent: "space-between", width: "100%", height: "auto", padding: 0 }}
+                          style={{
+                            justifyContent: "space-between",
+                            width: "100%",
+                            height: "auto",
+                            padding: 0,
+                          }}
                         >
-                          <Flex align="center" justify="between" style={{ width: "100%", padding: "6px 0" }}>
+                          <Flex
+                            align="center"
+                            justify="between"
+                            style={{ width: "100%", padding: "6px 0" }}
+                          >
                             <Flex align="center" gap="3">
                               <Box
                                 style={{
@@ -1735,22 +2362,35 @@ export function App() {
                                   borderRadius: 12,
                                   background: "rgba(255,255,255,0.08)",
                                   display: "grid",
-                                  placeItems: "center"
+                                  placeItems: "center",
                                 }}
                               >
                                 <PersonIcon />
                               </Box>
                               <Box>
-                                <Text size="3">{getParticipantDisplayName(participant, localNicknames)}</Text>
+                                <Text size="3">
+                                  {getParticipantDisplayName(
+                                    participant,
+                                    localNicknames,
+                                  )}
+                                </Text>
                                 <Flex align="center" gap="2" wrap="wrap">
                                   {localNicknames[participant.id] ? (
-                                    <Text size="1" color="gray">Server name: {participant.name}</Text>
+                                    <Text size="1" color="gray">
+                                      Server name: {participant.name}
+                                    </Text>
                                   ) : null}
-                                  {getParticipantStateLabels(participant).map((label) => (
-                                    <Badge key={`${participant.id}-${label}`} variant="soft" color="gray">
-                                      {label}
-                                    </Badge>
-                                  ))}
+                                  {getParticipantStateLabels(participant).map(
+                                    (label) => (
+                                      <Badge
+                                        key={`${participant.id}-${label}`}
+                                        variant="soft"
+                                        color="gray"
+                                      >
+                                        {label}
+                                      </Badge>
+                                    ),
+                                  )}
                                 </Flex>
                               </Box>
                             </Flex>
@@ -1776,40 +2416,67 @@ export function App() {
                       <Flex direction="column" gap="3">
                         <SectionHeader
                           title="Participant details"
-                          subtitle={selectedParticipantChannel
-                            ? `Currently in ${selectedParticipantChannel.name}`
-                            : "User profile and local nickname"}
+                          subtitle={
+                            selectedParticipantChannel
+                              ? `Currently in ${selectedParticipantChannel.name}`
+                              : "User profile and local nickname"
+                          }
                         />
                         <Grid columns={{ initial: "1", sm: "2" }} gap="3">
                           <Box>
-                            <Text size="1" color="gray">Display name</Text>
-                            <Text size="3">{getParticipantDisplayName(selectedParticipant, localNicknames)}</Text>
+                            <Text size="1" color="gray">
+                              Display name
+                            </Text>
+                            <Text size="3">
+                              {getParticipantDisplayName(
+                                selectedParticipant,
+                                localNicknames,
+                              )}
+                            </Text>
                           </Box>
                           <Box>
-                            <Text size="1" color="gray">Status</Text>
+                            <Text size="1" color="gray">
+                              Status
+                            </Text>
                             <Flex style={{ marginTop: 4 }} gap="2" wrap="wrap">
                               <StatusChip
                                 status={selectedParticipant.status}
-                                label={getParticipantStatusLabel(selectedParticipant)}
+                                label={getParticipantStatusLabel(
+                                  selectedParticipant,
+                                )}
                               />
-                              {getParticipantStateLabels(selectedParticipant).map((label) => (
-                                <Badge key={`selected-${selectedParticipant.id}-${label}`} variant="soft" color="gray">
+                              {getParticipantStateLabels(
+                                selectedParticipant,
+                              ).map((label) => (
+                                <Badge
+                                  key={`selected-${selectedParticipant.id}-${label}`}
+                                  variant="soft"
+                                  color="gray"
+                                >
                                   {label}
                                 </Badge>
                               ))}
                             </Flex>
                           </Box>
                           <Box>
-                            <Text size="1" color="gray">Server name</Text>
+                            <Text size="1" color="gray">
+                              Server name
+                            </Text>
                             <Text size="3">{selectedParticipant.name}</Text>
                           </Box>
                           <Box>
-                            <Text size="1" color="gray">Participant ID</Text>
-                            <Text size="2" style={{ wordBreak: "break-all" }}>{selectedParticipant.id}</Text>
+                            <Text size="1" color="gray">
+                              Participant ID
+                            </Text>
+                            <Text size="2" style={{ wordBreak: "break-all" }}>
+                              {selectedParticipant.id}
+                            </Text>
                           </Box>
                         </Grid>
                         <Box>
-                          <Text size="1" color="gray">Local nickname</Text>
+                          <Text size="1" color="gray">
+                            Local nickname
+                          </Text>
                           <TextField.Root
                             value={participantNicknameDraft}
                             placeholder="Add a local alias for this user"
@@ -1841,8 +2508,8 @@ export function App() {
                                 localNicknames: withParticipantLocalNickname(
                                   localNicknames,
                                   selectedParticipant.id,
-                                  ""
-                                )
+                                  "",
+                                ),
                               });
                             }}
                             disabled={!localNicknames[selectedParticipant.id]}
@@ -1869,23 +2536,45 @@ export function App() {
                 <Flex direction="column" gap="4">
                   <SectionHeader
                     title="Chat"
-                    subtitle={activeChannel ? `Messages in ${activeChannel.name}` : "Basic room chat"}
+                    subtitle={
+                      activeChannel
+                        ? `Messages in ${activeChannel.name}`
+                        : "Basic room chat"
+                    }
                   />
                   {activeMessages.length > 0 ? (
-                    <Flex direction="column" gap="3" style={{ maxHeight: 280, overflowY: "auto", paddingRight: 4 }}>
+                    <Flex
+                      direction="column"
+                      gap="3"
+                      style={{
+                        maxHeight: 280,
+                        overflowY: "auto",
+                        paddingRight: 4,
+                      }}
+                    >
                       {activeMessages.map((message) => (
                         <Card key={message.id} className="section-card">
                           <Flex direction="column" gap="2">
                             <Flex align="center" justify="between" gap="3">
                               <Flex align="center" gap="2">
-                                <Text size="2" weight="bold">{message.author}</Text>
-                                {message.isSelf ? <Badge size="1" variant="soft">You</Badge> : null}
+                                <Text size="2" weight="bold">
+                                  {message.author}
+                                </Text>
+                                {message.isSelf ? (
+                                  <Badge size="1" variant="soft">
+                                    You
+                                  </Badge>
+                                ) : null}
                               </Flex>
-                              <Text size="1" color="gray">{formatChatTimestamp(message.sentAt)}</Text>
+                              <Text size="1" color="gray">
+                                {formatChatTimestamp(message.sentAt)}
+                              </Text>
                             </Flex>
                             <Text size="2">{message.body}</Text>
                             {message.channelId === null ? (
-                              <Text size="1" color="gray">Server notice</Text>
+                              <Text size="1" color="gray">
+                                Server notice
+                              </Text>
                             ) : null}
                           </Flex>
                         </Card>
@@ -1906,7 +2595,11 @@ export function App() {
                   >
                     <Flex direction={{ initial: "column", sm: "row" }} gap="3">
                       <TextField.Root
-                        placeholder={activeChannel ? `Message ${activeChannel.name}` : "Message the active room"}
+                        placeholder={
+                          activeChannel
+                            ? `Message ${activeChannel.name}`
+                            : "Message the active room"
+                        }
                         value={chatDraft}
                         onChange={(event) => {
                           setChatDraft(event.target.value);
@@ -1918,7 +2611,10 @@ export function App() {
                           <ChatBubbleIcon />
                         </TextField.Slot>
                       </TextField.Root>
-                      <Button type="submit" disabled={appState.connection.status !== "connected"}>
+                      <Button
+                        type="submit"
+                        disabled={appState.connection.status !== "connected"}
+                      >
                         Send
                       </Button>
                     </Flex>
@@ -1931,14 +2627,20 @@ export function App() {
                   <SectionHeader
                     title="Audio chain"
                     subtitle="Realtime processing controls"
-                    action={<IconButton variant="ghost"><MixerHorizontalIcon /></IconButton>}
+                    action={
+                      <IconButton variant="ghost">
+                        <MixerHorizontalIcon />
+                      </IconButton>
+                    }
                   />
                   <Grid columns={{ initial: "1", sm: "2" }} gap="3">
                     {audioPresets.map((preset) => (
                       <Card key={preset.label} className="section-card">
                         <Flex direction="column" gap="2">
                           <Text weight="bold">{preset.label}</Text>
-                          <Text size="2" color="gray">{preset.description}</Text>
+                          <Text size="2" color="gray">
+                            {preset.description}
+                          </Text>
                           <Button
                             variant="soft"
                             size="2"
@@ -1956,21 +2658,36 @@ export function App() {
                   <SectionHeader
                     title="DSP pipeline"
                     subtitle="Local voice processing controls"
-                    action={<IconButton variant="ghost"><MixerHorizontalIcon /></IconButton>}
+                    action={
+                      <IconButton variant="ghost">
+                        <MixerHorizontalIcon />
+                      </IconButton>
+                    }
                   />
                   <Flex direction="column" gap="3">
                     {dspFeatures.map((feature) => (
-                      <Flex key={feature.key} align="center" justify="between" gap="3">
+                      <Flex
+                        key={feature.key}
+                        align="center"
+                        justify="between"
+                        gap="3"
+                      >
                         <Box style={{ flex: 1 }}>
                           <Text size="2">{feature.label}</Text>
-                          <Text size="1" color="gray">{feature.description}</Text>
+                          <Text size="1" color="gray">
+                            {feature.description}
+                          </Text>
                         </Box>
                         <Switch
                           checked={dspPipeline.settings[feature.key]}
                           onCheckedChange={(enabled) => {
-                            setDspPipelineState((currentPipeline) => (
-                              setDspFeature(currentPipeline.settings, feature.key, enabled)
-                            ));
+                            setDspPipelineState((currentPipeline) =>
+                              setDspFeature(
+                                currentPipeline.settings,
+                                feature.key,
+                                enabled,
+                              ),
+                            );
                           }}
                         />
                       </Flex>
@@ -1978,13 +2695,21 @@ export function App() {
                   </Flex>
                   <Separator size="4" />
                   <Flex align="start" justify="between" gap="3">
-                    <Text size="2" color="gray">Pipeline status</Text>
+                    <Text size="2" color="gray">
+                      Pipeline status
+                    </Text>
                     <Flex gap="2" wrap="wrap" justify="end">
-                      {dspPipeline.isBypassed
-                        ? <Badge size="2" variant="soft" color="gray">Bypassed</Badge>
-                        : dspPipeline.activeStages.map((stage) => (
-                          <Badge key={stage} size="2" variant="outline">{stage}</Badge>
-                        ))}
+                      {dspPipeline.isBypassed ? (
+                        <Badge size="2" variant="soft" color="gray">
+                          Bypassed
+                        </Badge>
+                      ) : (
+                        dspPipeline.activeStages.map((stage) => (
+                          <Badge key={stage} size="2" variant="outline">
+                            {stage}
+                          </Badge>
+                        ))
+                      )}
                     </Flex>
                   </Flex>
                 </Flex>
@@ -1993,55 +2718,80 @@ export function App() {
               <div ref={diagnosticsSectionRef}>
                 <Card className="section-card fade-in delay-3">
                   <Flex direction="column" gap="4">
-                    <SectionHeader title="Quick actions" subtitle="Renderer-driven session controls" />
+                    <SectionHeader
+                      title="Quick actions"
+                      subtitle="Renderer-driven session controls"
+                    />
                     <Grid columns={{ initial: "1", sm: "2" }} gap="3">
                       <QuickAction
                         title="Mute"
-                        description={appState.audio.selfMuted ? "Unmute microphone" : quickActionTalkModeLabel}
+                        description={
+                          appState.audio.selfMuted
+                            ? "Unmute microphone"
+                            : quickActionTalkModeLabel
+                        }
                         icon={<SpeakerOffIcon />}
                         active={appState.audio.selfMuted}
                         onClick={() => {
-                          void updateAudioSettings({ selfMuted: !appState.audio.selfMuted });
+                          void updateAudioSettings({
+                            selfMuted: !appState.audio.selfMuted,
+                          });
                         }}
                       />
                       <QuickAction
                         title="Push to talk"
-                        description={appState.preferences.pushToTalk
-                          ? `Switch to voice activation · ${pushToTalkShortcutLabel}`
-                          : "Require a hold-to-speak workflow"}
+                        description={
+                          appState.preferences.pushToTalk
+                            ? `Switch to voice activation · ${pushToTalkShortcutLabel}`
+                            : "Require a hold-to-speak workflow"
+                        }
                         icon={<PersonIcon />}
                         active={appState.preferences.pushToTalk}
                         onClick={() => {
-                          void updatePreferences({ pushToTalk: !appState.preferences.pushToTalk });
+                          void updatePreferences({
+                            pushToTalk: !appState.preferences.pushToTalk,
+                          });
                         }}
                       />
                       <QuickAction
                         title="Output"
                         description="Route back to the system output"
                         icon={<SpeakerLoudIcon />}
-                        active={appState.audio.outputDeviceId === SYSTEM_DEFAULT_DEVICE_ID}
+                        active={
+                          appState.audio.outputDeviceId ===
+                          SYSTEM_DEFAULT_DEVICE_ID
+                        }
                         onClick={() => {
-                          void updateAudioSettings({ outputDeviceId: SYSTEM_DEFAULT_DEVICE_ID });
+                          void updateAudioSettings({
+                            outputDeviceId: SYSTEM_DEFAULT_DEVICE_ID,
+                          });
                         }}
                       />
                       <QuickAction
                         title="Latency"
-                        description={appState.preferences.showLatencyDetails
-                          ? "Hide diagnostics"
-                          : latencyQuickActionLabel}
+                        description={
+                          appState.preferences.showLatencyDetails
+                            ? "Hide diagnostics"
+                            : latencyQuickActionLabel
+                        }
                         icon={<LightningBoltIcon />}
                         active={appState.preferences.showLatencyDetails}
                         onClick={() => {
-                          void updatePreferences({ showLatencyDetails: !appState.preferences.showLatencyDetails });
+                          void updatePreferences({
+                            showLatencyDetails:
+                              !appState.preferences.showLatencyDetails,
+                          });
                         }}
                       />
                       <QuickAction
                         title="Rooms"
-                        description={nextNavigableChannel
-                          ? `Move to ${nextNavigableChannel.name}`
-                          : activeChannel
-                            ? `Stay in ${activeChannel.name}`
-                            : "Connect to browse rooms"}
+                        description={
+                          nextNavigableChannel
+                            ? `Move to ${nextNavigableChannel.name}`
+                            : activeChannel
+                              ? `Stay in ${activeChannel.name}`
+                              : "Connect to browse rooms"
+                        }
                         icon={<ChatBubbleIcon />}
                         disabled={!nextNavigableChannel}
                         onClick={() => {
@@ -2052,21 +2802,54 @@ export function App() {
                     {appState.preferences.showLatencyDetails ? (
                       <Card className="section-card">
                         <Flex direction="column" gap="3">
-                          <Text size="2">Latency: {appState.telemetry.latencyMs ?? "—"} ms</Text>
-                          <Text size="2">Jitter: {appState.telemetry.jitterMs ?? "—"} ms</Text>
-                          <Text size="2">Packet loss: {appState.telemetry.packetLoss ?? "—"}%</Text>
-                          <Text size="2">Voice transport: {describeTransportStatus(voiceTransportStatus)}</Text>
-                          {voiceTransportStatus?.remoteAddress && voiceTransportStatus.remotePort ? (
+                          <Text size="2">
+                            Latency: {appState.telemetry.latencyMs ?? "—"} ms
+                          </Text>
+                          <Text size="2">
+                            Jitter: {appState.telemetry.jitterMs ?? "—"} ms
+                          </Text>
+                          <Text size="2">
+                            Packet loss: {appState.telemetry.packetLoss ?? "—"}%
+                          </Text>
+                          <Text size="2">
+                            Voice transport:{" "}
+                            {describeTransportStatus(voiceTransportStatus)}
+                          </Text>
+                          <Text size="2">
+                            Loopback RTT:{" "}
+                            {voiceTransportStatus?.averageRoundTripMs ?? "—"} ms
+                          </Text>
+                          <Text size="2">
+                            Voice packets:{" "}
+                            {voiceTransportStatus?.packetsSent ?? 0} sent ·{" "}
+                            {voiceTransportStatus?.packetsReceived ?? 0}{" "}
+                            received
+                          </Text>
+                          {voiceTransportStatus?.remoteAddress &&
+                          voiceTransportStatus.remotePort ? (
                             <Text size="2">
-                              Remote endpoint: {voiceTransportStatus.remoteAddress}:{voiceTransportStatus.remotePort}
+                              Remote endpoint:{" "}
+                              {voiceTransportStatus.remoteAddress}:
+                              {voiceTransportStatus.remotePort}
                             </Text>
                           ) : null}
-                          <Text size="2">{formatTransportActivity(voiceTransportStatus)}</Text>
+                          <Text size="2">
+                            {formatTransportActivity(voiceTransportStatus)}
+                          </Text>
+                          {voiceTransportStatus?.cipherSuite ? (
+                            <Text size="1" color="gray">
+                              {voiceTransportStatus.cipherSuite}
+                            </Text>
+                          ) : null}
                           {voiceTransportStatus?.lastError ? (
-                            <Text size="2" color="ruby">Transport error: {voiceTransportStatus.lastError}</Text>
+                            <Text size="2" color="ruby">
+                              Transport error: {voiceTransportStatus.lastError}
+                            </Text>
                           ) : null}
                           {connectionError ? (
-                            <Text size="2" color="ruby">Session issue: {connectionError}</Text>
+                            <Text size="2" color="ruby">
+                              Session issue: {connectionError}
+                            </Text>
                           ) : null}
                           <Flex gap="3" wrap="wrap" align="center">
                             <Button
@@ -2074,20 +2857,30 @@ export function App() {
                               onClick={() => {
                                 void exportDiagnostics();
                               }}
-                              disabled={!window.app?.exportDiagnostics || isExportingDiagnostics}
+                              disabled={
+                                !window.app?.exportDiagnostics ||
+                                isExportingDiagnostics
+                              }
                             >
                               <DownloadIcon />
-                              {isExportingDiagnostics ? "Exporting…" : "Export diagnostics"}
+                              {isExportingDiagnostics
+                                ? "Exporting…"
+                                : "Export diagnostics"}
                             </Button>
                             <Text size="1" color="gray">
-                              Includes structured logs plus network and audio diagnostics for bug reports.
+                              Includes structured logs plus network and audio
+                              diagnostics for bug reports.
                             </Text>
                           </Flex>
                           {diagnosticsMessage ? (
-                            <Text size="1" color="green">{diagnosticsMessage}</Text>
+                            <Text size="1" color="green">
+                              {diagnosticsMessage}
+                            </Text>
                           ) : null}
                           {diagnosticsError ? (
-                            <Text size="1" color="ruby">{diagnosticsError}</Text>
+                            <Text size="1" color="ruby">
+                              {diagnosticsError}
+                            </Text>
                           ) : null}
                         </Flex>
                       </Card>
@@ -2098,78 +2891,109 @@ export function App() {
 
               <Card className="section-card fade-in delay-3">
                 <Flex direction="column" gap="4">
-                  <SectionHeader title="Preferences" subtitle="Saved with recent server details" />
+                  <SectionHeader
+                    title="Preferences"
+                    subtitle="Saved with recent server details"
+                  />
                   <Flex direction="column" gap="3">
                     <Flex align="center" justify="between" gap="3">
                       <Box>
                         <Text size="2">Push to talk</Text>
-                        <Text size="1" color="gray">Require a hold-to-speak workflow.</Text>
+                        <Text size="1" color="gray">
+                          Require a hold-to-speak workflow.
+                        </Text>
                       </Box>
                       <Switch
                         checked={appState.preferences.pushToTalk}
                         onCheckedChange={(checked) => {
                           void updatePreferences({ pushToTalk: checked });
                         }}
-                        />
-                      </Flex>
-                      <label className="device-field">
-                        <Text size="2" color="gray">PTT shortcut</Text>
-                        <input
-                          className="device-select"
-                          type="text"
-                          value={pushToTalkShortcutLabel}
-                          readOnly
-                          onFocus={(event) => {
-                            event.currentTarget.select();
-                          }}
-                          onKeyDown={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-
-                            if (event.key === "Backspace" || event.key === "Delete") {
-                              void updatePreferences({ pushToTalkShortcut: DEFAULT_PUSH_TO_TALK_SHORTCUT });
-                              return;
-                            }
-
-                            const nextShortcut = shortcutFromKeyboardEvent(event.nativeEvent);
-                            if (!nextShortcut) {
-                              return;
-                            }
-
-                            void updatePreferences({ pushToTalkShortcut: nextShortcut });
-                          }}
-                        />
-                      </label>
-                      <Text size="1" color="gray">
-                        Focus the shortcut field and press any key to set it as your push-to-talk shortcut. Press Backspace or Delete to reset to Space. Current switch state: {pushToTalkPressed ? "Held" : "Released"}.
+                      />
+                    </Flex>
+                    <label className="device-field">
+                      <Text size="2" color="gray">
+                        PTT shortcut
                       </Text>
-                      <Flex direction="column" gap="3">
-                        <Box>
-                          <Text size="2">Shortcut targets</Text>
-                          <Text size="1" color="gray">
-                            Add renderer shortcuts for quick actions like mute, diagnostics, output routing, and channel cycling.
-                          </Text>
-                        </Box>
-                        {shortcutBindings.length === 0 ? (
-                          <Text size="1" color="gray">
-                            No quick-action shortcuts configured yet. Add one to capture a key and route it to an existing quick action.
-                          </Text>
-                        ) : shortcutBindings.map((binding) => {
-                          const targetOption = getShortcutTargetOption(binding.target);
+                      <input
+                        className="device-select"
+                        type="text"
+                        value={pushToTalkShortcutLabel}
+                        readOnly
+                        onFocus={(event) => {
+                          event.currentTarget.select();
+                        }}
+                        onKeyDown={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+
+                          if (
+                            event.key === "Backspace" ||
+                            event.key === "Delete"
+                          ) {
+                            void updatePreferences({
+                              pushToTalkShortcut: DEFAULT_PUSH_TO_TALK_SHORTCUT,
+                            });
+                            return;
+                          }
+
+                          const nextShortcut = shortcutFromKeyboardEvent(
+                            event.nativeEvent,
+                          );
+                          if (!nextShortcut) {
+                            return;
+                          }
+
+                          void updatePreferences({
+                            pushToTalkShortcut: nextShortcut,
+                          });
+                        }}
+                      />
+                    </label>
+                    <Text size="1" color="gray">
+                      Focus the shortcut field and press any key to set it as
+                      your push-to-talk shortcut. Press Backspace or Delete to
+                      reset to Space. Current switch state:{" "}
+                      {pushToTalkPressed ? "Held" : "Released"}.
+                    </Text>
+                    <Flex direction="column" gap="3">
+                      <Box>
+                        <Text size="2">Shortcut targets</Text>
+                        <Text size="1" color="gray">
+                          Add renderer shortcuts for quick actions like mute,
+                          diagnostics, output routing, and channel cycling.
+                        </Text>
+                      </Box>
+                      {shortcutBindings.length === 0 ? (
+                        <Text size="1" color="gray">
+                          No quick-action shortcuts configured yet. Add one to
+                          capture a key and route it to an existing quick
+                          action.
+                        </Text>
+                      ) : (
+                        shortcutBindings.map((binding) => {
+                          const targetOption = getShortcutTargetOption(
+                            binding.target,
+                          );
 
                           return (
                             <Card key={binding.target} className="section-card">
                               <Flex direction="column" gap="3">
-                                <Grid columns={{ initial: "1", md: "2" }} gap="3">
+                                <Grid
+                                  columns={{ initial: "1", md: "2" }}
+                                  gap="3"
+                                >
                                   <label className="device-field">
-                                    <Text size="2" color="gray">Target</Text>
+                                    <Text size="2" color="gray">
+                                      Target
+                                    </Text>
                                     <select
                                       className="device-select"
                                       value={binding.target}
                                       onChange={(event) => {
                                         updateShortcutBindingTarget(
                                           binding.target,
-                                          event.target.value as AppClientShortcutBinding["target"]
+                                          event.target
+                                            .value as AppClientShortcutBinding["target"],
                                         );
                                       }}
                                     >
@@ -2177,9 +3001,14 @@ export function App() {
                                         <option
                                           key={option.value}
                                           value={option.value}
-                                          disabled={option.value !== binding.target && shortcutBindings.some((candidate) => (
-                                            candidate.target === option.value
-                                          ))}
+                                          disabled={
+                                            option.value !== binding.target &&
+                                            shortcutBindings.some(
+                                              (candidate) =>
+                                                candidate.target ===
+                                                option.value,
+                                            )
+                                          }
                                         >
                                           {option.label}
                                         </option>
@@ -2187,11 +3016,15 @@ export function App() {
                                     </select>
                                   </label>
                                   <label className="device-field">
-                                    <Text size="2" color="gray">Shortcut</Text>
+                                    <Text size="2" color="gray">
+                                      Shortcut
+                                    </Text>
                                     <input
                                       className="device-select"
                                       type="text"
-                                      value={formatPushToTalkShortcut(binding.shortcut)}
+                                      value={formatPushToTalkShortcut(
+                                        binding.shortcut,
+                                      )}
                                       readOnly
                                       onFocus={(event) => {
                                         event.currentTarget.select();
@@ -2200,27 +3033,44 @@ export function App() {
                                         event.preventDefault();
                                         event.stopPropagation();
 
-                                        if (event.key === "Backspace" || event.key === "Delete") {
+                                        if (
+                                          event.key === "Backspace" ||
+                                          event.key === "Delete"
+                                        ) {
                                           updateShortcutBindingShortcut(
                                             binding.target,
-                                            getDefaultShortcutBinding(binding.target).shortcut
+                                            getDefaultShortcutBinding(
+                                              binding.target,
+                                            ).shortcut,
                                           );
                                           return;
                                         }
 
-                                        const nextShortcut = shortcutFromKeyboardEvent(event.nativeEvent);
+                                        const nextShortcut =
+                                          shortcutFromKeyboardEvent(
+                                            event.nativeEvent,
+                                          );
                                         if (!nextShortcut) {
                                           return;
                                         }
 
-                                        updateShortcutBindingShortcut(binding.target, nextShortcut);
+                                        updateShortcutBindingShortcut(
+                                          binding.target,
+                                          nextShortcut,
+                                        );
                                       }}
                                     />
                                   </label>
                                 </Grid>
-                                <Flex align="center" justify="between" gap="3" wrap="wrap">
+                                <Flex
+                                  align="center"
+                                  justify="between"
+                                  gap="3"
+                                  wrap="wrap"
+                                >
                                   <Text size="1" color="gray">
-                                    {targetOption?.description ?? "Route the shortcut to a quick action target."}
+                                    {targetOption?.description ??
+                                      "Route the shortcut to a quick action target."}
                                   </Text>
                                   <Button
                                     variant="ghost"
@@ -2236,32 +3086,38 @@ export function App() {
                               </Flex>
                             </Card>
                           );
-                        })}
-                        <Flex gap="2" wrap="wrap">
-                          <Button
-                            variant="soft"
-                            size="2"
-                            onClick={addShortcutBinding}
-                            disabled={shortcutBindings.length >= shortcutTargetOptions.length}
-                          >
-                            Add shortcut
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="2"
-                            onClick={() => {
-                              updateShortcutBindings([]);
-                            }}
-                            disabled={shortcutBindings.length === 0}
-                          >
-                            Clear all
-                          </Button>
-                        </Flex>
+                        })
+                      )}
+                      <Flex gap="2" wrap="wrap">
+                        <Button
+                          variant="soft"
+                          size="2"
+                          onClick={addShortcutBinding}
+                          disabled={
+                            shortcutBindings.length >=
+                            shortcutTargetOptions.length
+                          }
+                        >
+                          Add shortcut
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="2"
+                          onClick={() => {
+                            updateShortcutBindings([]);
+                          }}
+                          disabled={shortcutBindings.length === 0}
+                        >
+                          Clear all
+                        </Button>
                       </Flex>
-                      <Flex align="center" justify="between" gap="3">
-                        <Box>
-                          <Text size="2">Auto reconnect</Text>
-                        <Text size="1" color="gray">Retry the last server automatically.</Text>
+                    </Flex>
+                    <Flex align="center" justify="between" gap="3">
+                      <Box>
+                        <Text size="2">Auto reconnect</Text>
+                        <Text size="1" color="gray">
+                          Retry the last server automatically.
+                        </Text>
                       </Box>
                       <Switch
                         checked={appState.preferences.autoReconnect}
@@ -2273,17 +3129,24 @@ export function App() {
                     <Flex align="center" justify="between" gap="3">
                       <Box>
                         <Text size="2">Notifications</Text>
-                        <Text size="1" color="gray">Show desktop notices for room changes.</Text>
+                        <Text size="1" color="gray">
+                          Show desktop notices for room changes.
+                        </Text>
                       </Box>
                       <Switch
                         checked={appState.preferences.notificationsEnabled}
                         onCheckedChange={(checked) => {
-                          void updatePreferences({ notificationsEnabled: checked });
+                          void updatePreferences({
+                            notificationsEnabled: checked,
+                          });
                         }}
                       />
                     </Flex>
                     <Text size="2" color="gray">
-                      Recent servers: {appState.recentServers.length > 0 ? appState.recentServers.join(" • ") : "None yet"}
+                      Recent servers:{" "}
+                      {appState.recentServers.length > 0
+                        ? appState.recentServers.join(" • ")
+                        : "None yet"}
                     </Text>
                   </Flex>
                 </Flex>
@@ -2291,10 +3154,14 @@ export function App() {
 
               <Card className="section-card fade-in delay-3">
                 <Flex direction="column" gap="4">
-                  <SectionHeader title="Secure transport" subtitle="Authenticated handshake + encrypted UDP" />
+                  <SectionHeader
+                    title="Secure transport"
+                    subtitle="Authenticated handshake + encrypted UDP"
+                  />
                   <Text size="2" color="gray">
-                    The Electron shell can now run an authenticated voice self-test that derives fresh
-                    session keys and encrypts a UDP voice round trip end-to-end.
+                    The Electron shell can now run an authenticated voice
+                    self-test that derives fresh session keys and encrypts a UDP
+                    voice round trip end-to-end.
                   </Text>
                   <Flex direction="column" gap="2">
                     <Flex gap="3" wrap="wrap">
@@ -2303,27 +3170,42 @@ export function App() {
                         onClick={() => {
                           void runSelfTest();
                         }}
-                        disabled={!window.app?.runSecureVoiceSelfTest || handshakeState === "running"}
+                        disabled={
+                          !window.app?.runSecureVoiceSelfTest ||
+                          handshakeState === "running"
+                        }
                       >
-                        {handshakeState === "running" ? "Running secure self-test…" : "Run auth self-test"}
+                        {handshakeState === "running"
+                          ? "Running secure self-test…"
+                          : "Run auth self-test"}
                       </Button>
                       <Button variant="soft" disabled>
-                        {window.app?.runSecureVoiceSelfTest ? "Electron transport available" : "Open in Electron to test"}
+                        {window.app?.runSecureVoiceSelfTest
+                          ? "Electron transport available"
+                          : "Open in Electron to test"}
                       </Button>
                     </Flex>
                     {selfTestResult ? (
                       <Card className="section-card">
                         <Flex direction="column" gap="2">
-                          <Text size="2" color="gray">Session ID</Text>
+                          <Text size="2" color="gray">
+                            Session ID
+                          </Text>
                           <Text size="2">{selfTestResult.sessionId}</Text>
-                          <Text size="2" color="gray">Echoed payload</Text>
+                          <Text size="2" color="gray">
+                            Echoed payload
+                          </Text>
                           <Text size="2">{selfTestResult.echoedPayload}</Text>
-                          <Text size="2" color="gray">{selfTestResult.cipherSuite}</Text>
+                          <Text size="2" color="gray">
+                            {selfTestResult.cipherSuite}
+                          </Text>
                         </Flex>
                       </Card>
                     ) : null}
                     {selfTestError ? (
-                      <Text size="2" color="ruby">{selfTestError}</Text>
+                      <Text size="2" color="ruby">
+                        {selfTestError}
+                      </Text>
                     ) : null}
                   </Flex>
                 </Flex>

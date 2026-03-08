@@ -7,16 +7,16 @@ import {
   type AppClientConnectRequest,
   type AppClientPreferences,
   type PersistedAppClientState,
-  type AppClientState
+  type AppClientState,
 } from "./appClientState.js";
 import {
   loadPersistedAppClientState,
-  savePersistedAppClientState
+  savePersistedAppClientState,
 } from "./appStateStorage.js";
 import {
   createDiagnosticsBundle,
   getDiagnosticsLogStore,
-  type RendererDiagnosticsSnapshot
+  type RendererDiagnosticsSnapshot,
 } from "./diagnostics.js";
 import { MumbleSessionManager } from "./mumble/index.js";
 import { getVoiceTransportStatus } from "./voiceTransportIpc.js";
@@ -34,16 +34,20 @@ const broadcastState = (state: AppClientState) => {
   }
 };
 
-const getPersistedStatePath = () => path.join(app.getPath("userData"), APP_STATE_FILE_NAME);
+const getPersistedStatePath = () =>
+  path.join(app.getPath("userData"), APP_STATE_FILE_NAME);
 
 const loadPersistedState = () => {
   try {
     return loadPersistedAppClientState(getPersistedStatePath());
   } catch (error) {
-    const errorCode = typeof error === "object" && error !== null && "code" in error ? error.code : null;
+    const errorCode =
+      typeof error === "object" && error !== null && "code" in error
+        ? error.code
+        : null;
     if (errorCode !== "ENOENT") {
       diagnosticsLogStore.log("warn", "app.state.load.failed", {
-        error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
       });
     }
     return null;
@@ -55,16 +59,17 @@ const savePersistedState = (state: PersistedAppClientState) => {
     savePersistedAppClientState(getPersistedStatePath(), state);
   } catch (error) {
     diagnosticsLogStore.log("error", "app.state.persist.failed", {
-      error: error instanceof Error ? error.message : String(error)
+      error: error instanceof Error ? error.message : String(error),
     });
     return;
   }
 };
 
-const buildDiagnosticsFilePath = () => path.join(
-  app.getPath("downloads"),
-  `mumble-diagnostics-${new Date().toISOString().replace(/[:.]/g, "-")}.json`
-);
+const buildDiagnosticsFilePath = () =>
+  path.join(
+    app.getPath("downloads"),
+    `mumble-diagnostics-${new Date().toISOString().replace(/[:.]/g, "-")}.json`,
+  );
 
 const getStore = () => {
   if (!store) {
@@ -74,7 +79,8 @@ const getStore = () => {
       onLog: (event) => {
         diagnosticsLogStore.log(event.level, event.event, event.context);
       },
-      waitForConnection: (request, controls) => getSessionManager().connect(request, controls)
+      waitForConnection: (request, controls) =>
+        getSessionManager().connect(request, controls),
     });
     store.subscribe((state) => {
       broadcastState(state);
@@ -98,7 +104,7 @@ const getSessionManager = () => {
         }
 
         store.disconnect();
-      }
+      },
     });
   }
 
@@ -118,68 +124,92 @@ export const registerAppStateIpc = () => {
   ipcMain.removeHandler("app:export-diagnostics");
 
   ipcMain.handle("app:get-state", () => getStore().getState());
-  ipcMain.handle("app:connect", async (_event, request: AppClientConnectRequest) => getStore().connect(request));
-  ipcMain.handle("app:remember-server", (_event, serverAddress: string) => getStore().rememberServer(serverAddress));
+  ipcMain.handle(
+    "app:connect",
+    async (_event, request: AppClientConnectRequest) =>
+      getStore().connect(request),
+  );
+  ipcMain.handle("app:remember-server", (_event, serverAddress: string) =>
+    getStore().rememberServer(serverAddress),
+  );
   ipcMain.handle("app:disconnect", async () => {
     await getSessionManager().disconnect();
     return getStore().disconnect();
   });
-  ipcMain.handle("app:select-channel", (_event, channelId: string) => getStore().selectChannel(channelId));
-  ipcMain.handle("app:join-channel", (_event, channelId: string) => getStore().joinChannel(channelId));
-  ipcMain.handle("app:send-chat-message", (_event, body: string) => getStore().sendChatMessage(body));
-  ipcMain.handle("app:update-audio", (_event, audio: Partial<AppClientAudioSettings>) => (
-    getStore().updateAudioSettings(audio)
-  ));
-  ipcMain.handle("app:update-preferences", (_event, preferences: Partial<AppClientPreferences>) => (
-    getStore().updatePreferences(preferences)
-  ));
-  ipcMain.handle("app:export-diagnostics", async (event, rendererSnapshot?: RendererDiagnosticsSnapshot) => {
-    diagnosticsLogStore.log("info", "diagnostics.export.requested", {
-      connectionStatus: getStore().getState().connection.status
-    });
-
-    const browserWindow = BrowserWindow.fromWebContents(event.sender) ?? undefined;
-    const saveResult = await dialog.showSaveDialog(browserWindow, {
-      title: "Export diagnostics bundle",
-      defaultPath: buildDiagnosticsFilePath(),
-      filters: [
-        {
-          name: "JSON",
-          extensions: ["json"]
-        }
-      ]
-    });
-
-    if (saveResult.canceled || !saveResult.filePath) {
-      diagnosticsLogStore.log("info", "diagnostics.export.cancelled");
-      return {
-        canceled: true,
-        filePath: null
-      };
-    }
-
-    try {
-      const bundle = createDiagnosticsBundle({
-        state: getStore().getState(),
-        logs: diagnosticsLogStore.getEntries(),
-        appVersion: app.getVersion(),
-        platform: process.platform,
-        voiceTransport: getVoiceTransportStatus(),
-        rendererSnapshot
+  ipcMain.handle("app:select-channel", (_event, channelId: string) =>
+    getStore().selectChannel(channelId),
+  );
+  ipcMain.handle("app:join-channel", (_event, channelId: string) =>
+    getStore().joinChannel(channelId),
+  );
+  ipcMain.handle("app:send-chat-message", (_event, body: string) =>
+    getStore().sendChatMessage(body),
+  );
+  ipcMain.handle(
+    "app:update-audio",
+    (_event, audio: Partial<AppClientAudioSettings>) =>
+      getStore().updateAudioSettings(audio),
+  );
+  ipcMain.handle(
+    "app:update-preferences",
+    (_event, preferences: Partial<AppClientPreferences>) =>
+      getStore().updatePreferences(preferences),
+  );
+  ipcMain.handle(
+    "app:export-diagnostics",
+    async (event, rendererSnapshot?: RendererDiagnosticsSnapshot) => {
+      diagnosticsLogStore.log("info", "diagnostics.export.requested", {
+        connectionStatus: getStore().getState().connection.status,
       });
-      writeFileSync(saveResult.filePath, JSON.stringify(bundle, null, 2), "utf8");
-      diagnosticsLogStore.log("info", "diagnostics.export.succeeded", {
-        filePath: saveResult.filePath
+
+      const browserWindow =
+        BrowserWindow.fromWebContents(event.sender) ?? undefined;
+      const saveResult = await dialog.showSaveDialog(browserWindow, {
+        title: "Export diagnostics bundle",
+        defaultPath: buildDiagnosticsFilePath(),
+        filters: [
+          {
+            name: "JSON",
+            extensions: ["json"],
+          },
+        ],
       });
-      return {
-        canceled: false,
-        filePath: saveResult.filePath
-      };
-    } catch (error) {
-      diagnosticsLogStore.log("error", "diagnostics.export.failed", {
-        error: error instanceof Error ? error.message : String(error)
-      });
-      throw error;
-    }
-  });
+
+      if (saveResult.canceled || !saveResult.filePath) {
+        diagnosticsLogStore.log("info", "diagnostics.export.cancelled");
+        return {
+          canceled: true,
+          filePath: null,
+        };
+      }
+
+      try {
+        const bundle = createDiagnosticsBundle({
+          state: getStore().getState(),
+          logs: diagnosticsLogStore.getEntries(),
+          appVersion: app.getVersion(),
+          platform: process.platform,
+          voiceTransport: getVoiceTransportStatus(),
+          rendererSnapshot,
+        });
+        writeFileSync(
+          saveResult.filePath,
+          JSON.stringify(bundle, null, 2),
+          "utf8",
+        );
+        diagnosticsLogStore.log("info", "diagnostics.export.succeeded", {
+          filePath: saveResult.filePath,
+        });
+        return {
+          canceled: false,
+          filePath: saveResult.filePath,
+        };
+      } catch (error) {
+        diagnosticsLogStore.log("error", "diagnostics.export.failed", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+      }
+    },
+  );
 };

@@ -15,6 +15,13 @@ declare global {
     lastError: string | null;
     lastSentAt: number | null;
     lastReceivedAt: number | null;
+    transportMode?: "udp" | "secure-loopback";
+    sessionId?: string | null;
+    cipherSuite?: string | null;
+    packetsSent?: number;
+    packetsReceived?: number;
+    packetLoss?: number | null;
+    averageRoundTripMs?: number | null;
   }
 
   interface VoiceTransportPacket {
@@ -119,6 +126,12 @@ declare global {
       mode: string;
       isTransmitting: boolean;
       meteringError: string | null;
+      playbackError?: string | null;
+      transportState?: string;
+      averageRoundTripMs?: number | null;
+      packetsSent?: number | null;
+      packetsReceived?: number | null;
+      packetLoss?: number | null;
       availableInputDevices: number;
       availableOutputDevices: number;
       outputRoutingReady: boolean;

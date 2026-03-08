@@ -17,6 +17,13 @@ export interface UdpVoiceTransportStatus {
   lastError: string | null;
   lastSentAt: number | null;
   lastReceivedAt: number | null;
+  transportMode?: "udp" | "secure-loopback";
+  sessionId?: string | null;
+  cipherSuite?: string | null;
+  packetsSent?: number;
+  packetsReceived?: number;
+  packetLoss?: number | null;
+  averageRoundTripMs?: number | null;
 }
 
 export interface UdpVoiceTransportPacket {
