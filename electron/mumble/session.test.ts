@@ -406,3 +406,76 @@ test("MumbleControlSession removes channels and participants from follow-up cont
     telemetry: {}
   });
 });
+
+test("MumbleControlSession flushes cached channel permissions when requested by the server", () => {
+  const session = new MumbleControlSession();
+
+  session.processControlMessage({
+    type: TCPMessageType.ChannelState,
+    payload: {
+      channelId: 0,
+      name: "Root"
+    }
+  });
+  session.processControlMessage({
+    type: TCPMessageType.ChannelState,
+    payload: {
+      channelId: 1,
+      parent: 0,
+      name: "Ops"
+    }
+  });
+  session.processControlMessage({
+    type: TCPMessageType.ServerSync,
+    payload: {
+      permissions: 0x0fn
+    }
+  });
+  session.processControlMessage({
+    type: TCPMessageType.PermissionQuery,
+    payload: {
+      channelId: 1,
+      permissions: 0x2f
+    }
+  });
+
+  const beforeFlush = session.buildLiveSession();
+  assert.equal(beforeFlush.channels.find((channel) => channel.id === "1")?.permissions?.move, true);
+
+  session.processControlMessage({
+    type: TCPMessageType.PermissionQuery,
+    payload: {
+      flush: true
+    }
+  });
+
+  assert.deepEqual(session.buildLiveSession(), {
+    channels: [
+      {
+        id: "0",
+        name: "Root",
+        parentId: null,
+        position: 0,
+        permissions: {
+          traverse: true,
+          enter: true,
+          speak: true,
+          muteDeafen: false,
+          move: false,
+          write: true
+        }
+      },
+      {
+        id: "1",
+        name: "Ops",
+        parentId: "0",
+        position: 0,
+        permissions: undefined
+      }
+    ],
+    participants: [],
+    activeChannelId: null,
+    messages: [],
+    telemetry: {}
+  });
+});

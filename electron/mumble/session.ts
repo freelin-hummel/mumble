@@ -169,7 +169,6 @@ export class MumbleControlSession extends EventEmitter<MumbleControlSessionEvent
 
   constructor({ channel = null, now, onLiveSession }: MumbleControlSessionOptions = {}) {
     super();
-    this.#channel = null;
     this.#now = now ?? (() => new Date());
     this.#onLiveSession = onLiveSession;
 
@@ -514,7 +513,21 @@ export class MumbleControlSession extends EventEmitter<MumbleControlSessionEvent
 
   applyPermissionQuery(payload: PermissionQueryMessage): boolean {
     if (payload.flush === true && payload.channelId === undefined) {
-      return false;
+      const hadPermissions = this.#channelPermissions.size > 0;
+      this.#channelPermissions.clear();
+
+      for (const [channelId, channel] of this.#channels.entries()) {
+        this.#channels.set(channelId, {
+          ...channel,
+          permissions: undefined
+        });
+      }
+
+      if (this.#server.rootPermissions !== null) {
+        this.applyChannelPermissions("0", permissionsFromMask(this.#server.rootPermissions));
+      }
+
+      return hadPermissions;
     }
 
     const channelId = toChannelId(payload.channelId);
