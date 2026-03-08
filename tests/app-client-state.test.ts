@@ -25,12 +25,18 @@ test("AppClientStore hydrates persisted desktop preferences", () => {
         pushToTalk: true,
         pushToTalkShortcut: "KeyV",
         shortcutBindings: [{ target: "toggleMute", shortcut: "m" }],
+        favoriteServers: [{ address: "voice.example.test:64738", label: "voice.example.test:64738" }],
         localNicknames: {
           atlas: "Lead"
         },
         autoReconnect: false,
         notificationsEnabled: false,
-        showLatencyDetails: true
+        showLatencyDetails: true,
+        voiceProcessing: {
+          agc: false,
+          noiseSuppression: false,
+          echoCancellation: true
+        }
       }
     },
     waitForConnection: async () => {}
@@ -45,8 +51,16 @@ test("AppClientStore hydrates persisted desktop preferences", () => {
   assert.equal(state.audio.outputDeviceId, "usb-headset");
   assert.equal(state.preferences.pushToTalkShortcut, "KeyV");
   assert.deepEqual(state.preferences.shortcutBindings, [{ target: "toggleMute", shortcut: "KeyM" }]);
+  assert.deepEqual(state.preferences.favoriteServers, [
+    { address: "voice.example.test:64738", label: "voice.example.test:64738" }
+  ]);
   assert.deepEqual(state.preferences.localNicknames, { atlas: "Lead" });
   assert.equal(state.preferences.showLatencyDetails, true);
+  assert.deepEqual(state.preferences.voiceProcessing, {
+    agc: false,
+    noiseSuppression: false,
+    echoCancellation: true
+  });
 });
 
 test("AppClientStore connect preserves an empty live session until real data arrives", async () => {
@@ -163,6 +177,12 @@ test("AppClientStore normalizes invalid push-to-talk shortcuts back to the defau
           { target: "toggleLatencyDetails", shortcut: "l" },
           { target: "invalid", shortcut: "KeyQ" }
         ],
+        favoriteServers: [
+          { address: " voice.example.test:64738 ", label: " Alpha " },
+          { address: "voice.example.test:64738", label: "" },
+          { address: "backup.example.test:64738" },
+          { address: "", label: "Missing" }
+        ],
         localNicknames: {
           "  atlas  ": "  Lead  ",
           echo: "",
@@ -171,7 +191,12 @@ test("AppClientStore normalizes invalid push-to-talk shortcuts back to the defau
         },
         autoReconnect: true,
         notificationsEnabled: true,
-        showLatencyDetails: false
+        showLatencyDetails: false,
+        voiceProcessing: {
+          agc: "loud",
+          noiseSuppression: false,
+          echoCancellation: true
+        }
       }
     },
     waitForConnection: async () => {}
@@ -182,8 +207,17 @@ test("AppClientStore normalizes invalid push-to-talk shortcuts back to the defau
     { target: "toggleMute", shortcut: "KeyM" },
     { target: "toggleLatencyDetails", shortcut: "KeyL" }
   ]);
+  assert.deepEqual(store.getState().preferences.favoriteServers, [
+    { address: "voice.example.test:64738", label: "Alpha" },
+    { address: "backup.example.test:64738", label: "backup.example.test:64738" }
+  ]);
   assert.deepEqual(store.getState().preferences.localNicknames, {
     atlas: "Lead"
+  });
+  assert.deepEqual(store.getState().preferences.voiceProcessing, {
+    agc: true,
+    noiseSuppression: false,
+    echoCancellation: true
   });
   assert.equal(store.updatePreferences({ pushToTalkShortcut: "m" }).preferences.pushToTalkShortcut, "KeyM");
 });
@@ -205,12 +239,18 @@ test("migratePersistedAppClientState upgrades legacy desktop settings snapshots 
       pushToTalk: true,
       pushToTalkShortcut: "v",
       shortcutBindings: [{ target: "cycleChannel", shortcut: "r" }],
+      favoriteServers: [{ address: "voice.example.test:64738", label: "Ops" }],
       localNicknames: {
         atlas: "Lead"
       },
       autoReconnect: false,
       notificationsEnabled: false,
-      showLatencyDetails: true
+      showLatencyDetails: true,
+      voiceProcessing: {
+        agc: false,
+        noiseSuppression: false,
+        echoCancellation: true
+      }
     }
   });
 
@@ -231,12 +271,18 @@ test("migratePersistedAppClientState upgrades legacy desktop settings snapshots 
       pushToTalk: true,
       pushToTalkShortcut: "KeyV",
       shortcutBindings: [{ target: "cycleChannel", shortcut: "KeyR" }],
+      favoriteServers: [{ address: "voice.example.test:64738", label: "Ops" }],
       localNicknames: {
         atlas: "Lead"
       },
       autoReconnect: false,
       notificationsEnabled: false,
-      showLatencyDetails: true
+      showLatencyDetails: true,
+      voiceProcessing: {
+        agc: false,
+        noiseSuppression: false,
+        echoCancellation: true
+      }
     }
   });
 });
@@ -258,8 +304,14 @@ test("AppClientStore persists versioned settings snapshots", () => {
     pushToTalk: true,
     pushToTalkShortcut: "KeyV",
     shortcutBindings: [{ target: "toggleMute", shortcut: "KeyM" }],
+    favoriteServers: [{ address: "voice.example.test:64738", label: "Primary" }],
     localNicknames: {
       atlas: "Lead"
+    },
+    voiceProcessing: {
+      agc: false,
+      noiseSuppression: true,
+      echoCancellation: true
     }
   });
 
@@ -280,12 +332,18 @@ test("AppClientStore persists versioned settings snapshots", () => {
       pushToTalk: true,
       pushToTalkShortcut: "KeyV",
       shortcutBindings: [{ target: "toggleMute", shortcut: "KeyM" }],
+      favoriteServers: [{ address: "voice.example.test:64738", label: "Primary" }],
       localNicknames: {
         atlas: "Lead"
       },
       autoReconnect: true,
       notificationsEnabled: true,
-      showLatencyDetails: false
+      showLatencyDetails: false,
+      voiceProcessing: {
+        agc: false,
+        noiseSuppression: true,
+        echoCancellation: true
+      }
     }
   });
 });
@@ -294,6 +352,9 @@ test("AppClientStore updates and clears persisted local nicknames", () => {
   const store = new AppClientStore({
     persistedState: {
       preferences: {
+        favoriteServers: [
+          { address: "voice.example.test:64738", label: "Primary" }
+        ],
         localNicknames: {
           atlas: "Lead"
         }
@@ -303,20 +364,60 @@ test("AppClientStore updates and clears persisted local nicknames", () => {
   });
 
   assert.deepEqual(store.updatePreferences({
+    favoriteServers: [
+      { address: "voice.example.test:64738", label: "Primary" },
+      { address: "backup.example.test:64738", label: "Backup" }
+    ],
     localNicknames: {
       atlas: "Lead",
       echo: "Anchor"
     }
-  }).preferences.localNicknames, {
-    atlas: "Lead",
-    echo: "Anchor"
+  }).preferences, {
+    pushToTalk: false,
+    pushToTalkShortcut: "Space",
+    shortcutBindings: [],
+    favoriteServers: [
+      { address: "voice.example.test:64738", label: "Primary" },
+      { address: "backup.example.test:64738", label: "Backup" }
+    ],
+    localNicknames: {
+      atlas: "Lead",
+      echo: "Anchor"
+    },
+    autoReconnect: true,
+    notificationsEnabled: true,
+    showLatencyDetails: false,
+    voiceProcessing: {
+      agc: true,
+      noiseSuppression: true,
+      echoCancellation: false
+    }
   });
   assert.deepEqual(store.updatePreferences({
+    favoriteServers: [
+      { address: "backup.example.test:64738", label: "Backup" }
+    ],
     localNicknames: {
       echo: "Anchor"
     }
-  }).preferences.localNicknames, {
-    echo: "Anchor"
+  }).preferences, {
+    pushToTalk: false,
+    pushToTalkShortcut: "Space",
+    shortcutBindings: [],
+    favoriteServers: [
+      { address: "backup.example.test:64738", label: "Backup" }
+    ],
+    localNicknames: {
+      echo: "Anchor"
+    },
+    autoReconnect: true,
+    notificationsEnabled: true,
+    showLatencyDetails: false,
+    voiceProcessing: {
+      agc: true,
+      noiseSuppression: true,
+      echoCancellation: false
+    }
   });
 });
 

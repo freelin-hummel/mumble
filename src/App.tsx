@@ -43,6 +43,7 @@ import { buildFailedConnectionRecovery } from "./connectionRecovery";
 import {
   createDspPipeline,
   dspFeatures,
+  loadDspSettings,
   loadDspPipeline,
   persistDspSettings,
   setDspFeature,
@@ -94,10 +95,12 @@ const fallbackAppState: AppClientState = {
     pushToTalk: false,
     pushToTalkShortcut: DEFAULT_PUSH_TO_TALK_SHORTCUT,
     shortcutBindings: [],
+    favoriteServers: [],
     localNicknames: {},
     autoReconnect: true,
     notificationsEnabled: true,
     showLatencyDetails: false,
+    voiceProcessing: loadDspSettings(),
   },
   telemetry: {
     latencyMs: null,
@@ -165,6 +168,25 @@ const buildRecentServers = (recentServers: string[], serverAddress: string) => {
     normalizedAddress,
     ...recentServers.filter((value) => value !== normalizedAddress),
   ].slice(0, 5);
+};
+
+const buildFavoriteServers = (
+  favoriteServers: AppClientPreferences["favoriteServers"],
+  serverAddress: string
+) => {
+  const normalizedAddress = serverAddress.trim();
+  if (normalizedAddress.length === 0) {
+    return favoriteServers;
+  }
+
+  const existingFavorite = favoriteServers.find((favoriteServer) => favoriteServer.address === normalizedAddress);
+  return [
+    {
+      address: normalizedAddress,
+      label: existingFavorite?.label ?? normalizedAddress
+    },
+    ...favoriteServers.filter((favoriteServer) => favoriteServer.address !== normalizedAddress)
+  ].slice(0, 10);
 };
 
 const formatChatTimestamp = (value: string) => {
@@ -379,13 +401,13 @@ export function App() {
   );
 
   const syncFormState = useCallback((state: AppClientState) => {
-    setServerAddress(
-      (currentValue) =>
-        currentValue ||
-        state.connection.serverAddress ||
-        state.recentServers[0] ||
-        "",
-    );
+    setServerAddress((currentValue) => (
+      currentValue
+      || state.connection.serverAddress
+      || state.recentServers[0]
+      || state.preferences.favoriteServers[0]?.address
+      || ""
+    ));
     setNickname((currentValue) => currentValue || state.connection.nickname);
   }, []);
 
@@ -508,12 +530,6 @@ export function App() {
 
   const updatePreferences = useCallback(
     async (preferences: Partial<AppClientPreferences>) => {
-      if (window.app?.updatePreferences) {
-        const nextState = await window.app.updatePreferences(preferences);
-        setAppState(nextState);
-        return;
-      }
-
       updateLocalAppState((currentState) => ({
         ...currentState,
         preferences: {
@@ -524,6 +540,10 @@ export function App() {
     },
     [updateLocalAppState],
   );
+
+  const updateFavoriteServers = useCallback((favoriteServers: AppClientPreferences["favoriteServers"]) => {
+    void updatePreferences({ favoriteServers });
+  }, [updatePreferences]);
 
   const rememberServer = useCallback(
     async (nextServerAddress: string) => {
@@ -562,6 +582,21 @@ export function App() {
     setFormError(null);
   }, []);
 
+  const loadFavoriteServer = useCallback((favoriteServer: AppClientPreferences["favoriteServers"][number]) => {
+    setServerAddress(favoriteServer.address);
+    setFormError(null);
+  }, []);
+
+  const saveFavoriteServer = useCallback(() => {
+    updateFavoriteServers(buildFavoriteServers(appState.preferences.favoriteServers, serverAddress));
+  }, [appState.preferences.favoriteServers, serverAddress, updateFavoriteServers]);
+
+  const removeFavoriteServer = useCallback((favoriteAddress: string) => {
+    updateFavoriteServers(appState.preferences.favoriteServers.filter((favoriteServer) => (
+      favoriteServer.address !== favoriteAddress
+    )));
+  }, [appState.preferences.favoriteServers, updateFavoriteServers]);
+
   useEffect(() => {
     audioSettingsRef.current = {
       captureEnabled: appState.audio.captureEnabled,
@@ -585,6 +620,10 @@ export function App() {
   useEffect(() => {
     voiceActivationRef.current = voiceActivation;
   }, [voiceActivation]);
+
+  useEffect(() => {
+    setDspPipelineState(createDspPipeline(appState.preferences.voiceProcessing));
+  }, [appState.preferences.voiceProcessing]);
 
   const refreshAudioDevices = useCallback(async () => {
     if (!mediaDevices?.enumerateDevices) {
@@ -1283,6 +1322,7 @@ export function App() {
   );
   const localNicknames = appState.preferences.localNicknames;
   const shortcutBindings = appState.preferences.shortcutBindings;
+  const favoriteServers = appState.preferences.favoriteServers;
   const connectionRecovery = useMemo(() => {
     if (!connectionError) {
       return null;
@@ -1718,8 +1758,9 @@ export function App() {
   ]);
 
   const applyPreset = (settings: (typeof audioPresets)[number]["settings"]) => {
-    persistDspSettings(settings);
-    setDspPipelineState(createDspPipeline(settings));
+    const normalizedSettings = persistDspSettings(settings);
+    setDspPipelineState(createDspPipeline(normalizedSettings));
+    void updatePreferences({ voiceProcessing: normalizedSettings });
   };
   const trimmedServerAddress = serverAddress.trim();
 
@@ -1819,6 +1860,15 @@ export function App() {
                         </Button>
                         <Button
                           size="3"
+                          variant="outline"
+                          type="button"
+                          onClick={saveFavoriteServer}
+                          disabled={appState.connection.status === "connecting" || trimmedServerAddress.length === 0}
+                        >
+                          Add favorite
+                        </Button>
+                        <Button
+                          size="3"
                           variant="soft"
                           type="button"
                           onClick={() => {
@@ -1832,6 +1882,43 @@ export function App() {
                           Disconnect
                         </Button>
                       </Flex>
+                      {favoriteServers.length > 0 ? (
+                        <Flex direction="column" gap="2" style={{ marginTop: 12 }}>
+                          <Text size="2" color="gray">
+                            Favorite servers
+                          </Text>
+                          <Flex gap="2" align="center" wrap="wrap">
+                            {favoriteServers.map((favoriteServer) => (
+                              <Flex key={favoriteServer.address} gap="1" align="center">
+                                <Button
+                                  size="1"
+                                  variant={trimmedServerAddress === favoriteServer.address ? "solid" : "soft"}
+                                  type="button"
+                                  onClick={() => {
+                                    loadFavoriteServer(favoriteServer);
+                                  }}
+                                  disabled={appState.connection.status === "connecting"}
+                                >
+                                  {favoriteServer.label}
+                                </Button>
+                                <IconButton
+                                  size="1"
+                                  variant="ghost"
+                                  color="ruby"
+                                  type="button"
+                                  aria-label={`Remove favorite ${favoriteServer.label}`}
+                                  onClick={() => {
+                                    removeFavoriteServer(favoriteServer.address);
+                                  }}
+                                  disabled={appState.connection.status === "connecting"}
+                                >
+                                  ×
+                                </IconButton>
+                              </Flex>
+                            ))}
+                          </Flex>
+                        </Flex>
+                      ) : null}
                       {appState.recentServers.length > 0 ? (
                         <Flex
                           gap="2"
@@ -1840,7 +1927,7 @@ export function App() {
                           style={{ marginTop: 12 }}
                         >
                           <Text size="2" color="gray">
-                            Saved servers
+                            Recent servers
                           </Text>
                           {appState.recentServers.map((recentServer) => (
                             <Button
@@ -2681,13 +2768,15 @@ export function App() {
                         <Switch
                           checked={dspPipeline.settings[feature.key]}
                           onCheckedChange={(enabled) => {
-                            setDspPipelineState((currentPipeline) =>
-                              setDspFeature(
-                                currentPipeline.settings,
-                                feature.key,
-                                enabled,
-                              ),
+                            const nextPipeline = setDspFeature(
+                              dspPipeline.settings,
+                              feature.key,
+                              enabled,
                             );
+                            setDspPipelineState(nextPipeline);
+                            void updatePreferences({
+                              voiceProcessing: persistDspSettings(nextPipeline.settings),
+                            });
                           }}
                         />
                       </Flex>
@@ -3142,6 +3231,11 @@ export function App() {
                         }}
                       />
                     </Flex>
+                    <Text size="2" color="gray">
+                      Favorites: {favoriteServers.length > 0
+                        ? favoriteServers.map((favoriteServer) => favoriteServer.label).join(" • ")
+                        : "None yet"}
+                    </Text>
                     <Text size="2" color="gray">
                       Recent servers:{" "}
                       {appState.recentServers.length > 0
