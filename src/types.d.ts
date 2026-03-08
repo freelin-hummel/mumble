@@ -47,6 +47,11 @@ declare global {
     channelId: string;
     status: "live" | "muted" | "idle";
     isSelf?: boolean;
+    isMuted?: boolean;
+    isDeafened?: boolean;
+    isSelfMuted?: boolean;
+    isSelfDeafened?: boolean;
+    isSuppressed?: boolean;
   }
 
   interface AppClientChatMessage {
@@ -135,6 +140,7 @@ declare global {
       rememberServer?: (serverAddress: string) => Promise<AppClientState>;
       disconnect?: () => Promise<AppClientState>;
       selectChannel?: (channelId: string) => Promise<AppClientState>;
+      joinChannel?: (channelId: string) => Promise<AppClientState>;
       sendChatMessage?: (body: string) => Promise<AppClientState>;
       updateAudioSettings?: (audio: Partial<AppClientAudioSettings>) => Promise<AppClientState>;
       updatePreferences?: (preferences: Partial<AppClientPreferences>) => Promise<AppClientState>;

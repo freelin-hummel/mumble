@@ -36,6 +36,11 @@ export type AppClientParticipant = {
   channelId: string;
   status: AppClientParticipantStatus;
   isSelf?: boolean;
+  isMuted?: boolean;
+  isDeafened?: boolean;
+  isSelfMuted?: boolean;
+  isSelfDeafened?: boolean;
+  isSuppressed?: boolean;
 };
 
 export type AppClientChatMessage = {
@@ -144,6 +149,11 @@ export type AppClientParticipantSnapshot = {
   channelId: string;
   status?: AppClientParticipantStatus;
   isSelf?: boolean;
+  isMuted?: boolean;
+  isDeafened?: boolean;
+  isSelfMuted?: boolean;
+  isSelfDeafened?: boolean;
+  isSuppressed?: boolean;
 };
 
 export type AppClientParticipantPatch = {
@@ -152,6 +162,11 @@ export type AppClientParticipantPatch = {
   channelId?: string;
   status?: AppClientParticipantStatus;
   isSelf?: boolean;
+  isMuted?: boolean;
+  isDeafened?: boolean;
+  isSelfMuted?: boolean;
+  isSelfDeafened?: boolean;
+  isSuppressed?: boolean;
 };
 
 export type AppClientSessionSnapshot = {
@@ -219,6 +234,38 @@ const compareText = (left: string, right: string) => left.localeCompare(right, u
 const isParticipantStatus = (value: string): value is AppClientParticipantStatus => (
   value === "live" || value === "muted" || value === "idle"
 );
+const normalizeParticipantFlag = (value: boolean | null | undefined) => (
+  value === true ? true : undefined
+);
+const normalizeParticipantState = (
+  participant: Pick<
+    AppClientParticipantSnapshot,
+    "status" | "isMuted" | "isDeafened" | "isSelfMuted" | "isSelfDeafened" | "isSuppressed"
+  >
+) => {
+  const isMuted = normalizeParticipantFlag(participant.isMuted);
+  const isDeafened = normalizeParticipantFlag(participant.isDeafened);
+  const isSelfMuted = normalizeParticipantFlag(participant.isSelfMuted);
+  const isSelfDeafened = normalizeParticipantFlag(participant.isSelfDeafened);
+  const isSuppressed = normalizeParticipantFlag(participant.isSuppressed);
+  const nextStatus = participant.status ?? (
+    isMuted || isDeafened || isSelfMuted || isSelfDeafened || isSuppressed
+      ? "muted"
+      : "idle"
+  );
+
+  return {
+    status: isParticipantStatus(nextStatus) ? nextStatus : "idle",
+    isMuted,
+    isDeafened,
+    isSelfMuted,
+    isSelfDeafened,
+    isSuppressed
+  } satisfies Pick<
+    AppClientParticipant,
+    "status" | "isMuted" | "isDeafened" | "isSelfMuted" | "isSelfDeafened" | "isSuppressed"
+  >;
+};
 const normalizeId = (value: string | null | undefined) => {
   if (typeof value !== "string") {
     return null;
@@ -382,12 +429,12 @@ const normalizeSessionState = (
         return null;
       }
 
-      const nextStatus = participant.status ?? "idle";
+      const normalizedParticipantState = normalizeParticipantState(participant);
       return {
         id,
         name,
         channelId,
-        status: isParticipantStatus(nextStatus) ? nextStatus : "idle",
+        ...normalizedParticipantState,
         isSelf: participant.isSelf === true ? true : undefined
       } satisfies AppClientParticipant;
     })
@@ -439,7 +486,12 @@ const toParticipantSnapshot = (participant: AppClientParticipant): AppClientPart
   name: participant.name,
   channelId: participant.channelId,
   status: participant.status,
-  isSelf: participant.isSelf
+  isSelf: participant.isSelf,
+  isMuted: participant.isMuted,
+  isDeafened: participant.isDeafened,
+  isSelfMuted: participant.isSelfMuted,
+  isSelfDeafened: participant.isSelfDeafened,
+  isSuppressed: participant.isSuppressed
 });
 
 const isRecord = (value: unknown): value is Record<string, unknown> => (
@@ -969,14 +1021,21 @@ export class AppClientStore {
         return currentState;
       }
 
-      const nextStatus = participant.status ?? currentParticipant?.status ?? "idle";
+      const normalizedParticipantState = normalizeParticipantState({
+        status: participant.status ?? currentParticipant?.status,
+        isMuted: participant.isMuted ?? currentParticipant?.isMuted,
+        isDeafened: participant.isDeafened ?? currentParticipant?.isDeafened,
+        isSelfMuted: participant.isSelfMuted ?? currentParticipant?.isSelfMuted,
+        isSelfDeafened: participant.isSelfDeafened ?? currentParticipant?.isSelfDeafened,
+        isSuppressed: participant.isSuppressed ?? currentParticipant?.isSuppressed
+      });
       nextParticipants.set(normalizedParticipantId, {
         id: normalizedParticipantId,
         name: typeof participant.name === "string"
           ? participant.name
           : currentParticipant?.name ?? normalizedParticipantId,
         channelId: normalizedChannelId,
-        status: isParticipantStatus(nextStatus) ? nextStatus : "idle",
+        ...normalizedParticipantState,
         isSelf: participant.isSelf ?? currentParticipant?.isSelf
       });
 
@@ -1050,6 +1109,52 @@ export class AppClientStore {
         participants: normalizedSessionState.participants,
         activeChannelId: normalizedSessionState.activeChannelId
       };
+    });
+    return this.getState();
+  }
+
+  public joinChannel(channelId: string) {
+    this.updateState((currentState) => {
+      if (currentState.connection.status !== "connected") {
+        return currentState;
+      }
+
+      const nextChannel = currentState.channels.find((channel) => channel.id === channelId);
+      if (!nextChannel || !nextChannel.permissions.enter) {
+        return currentState;
+      }
+
+      const selfParticipant = currentState.participants.find((participant) => participant.isSelf);
+      if (!selfParticipant) {
+        return {
+          ...currentState,
+          activeChannelId: nextChannel.id
+        };
+      }
+
+      const normalizedSessionState = normalizeSessionState(
+        currentState.channels.map(toChannelSnapshot),
+        currentState.participants.map((participant) => (
+          participant.id === selfParticipant.id
+            ? {
+              ...toParticipantSnapshot(participant),
+              channelId: nextChannel.id
+            }
+            : toParticipantSnapshot(participant)
+        )),
+        nextChannel.id,
+        currentState.activeChannelId
+      );
+
+      return {
+        ...currentState,
+        channels: normalizedSessionState.channels,
+        participants: normalizedSessionState.participants,
+        activeChannelId: normalizedSessionState.activeChannelId
+      };
+    });
+    this.log("info", "channel.joined", {
+      channelId
     });
     return this.getState();
   }

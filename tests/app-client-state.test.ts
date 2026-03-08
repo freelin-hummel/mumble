@@ -396,6 +396,37 @@ test("AppClientStore keeps channel selection aligned with enter permissions", as
   assert.equal(store.updateChannelPermissions("root", { enter: false }).activeChannelId, null);
 });
 
+test("AppClientStore joinChannel moves the local participant into the selected room", async () => {
+  const store = new AppClientStore({
+    waitForConnection: async () => {}
+  });
+
+  await store.connect({
+    serverAddress: "voice.example.test:64738",
+    nickname: "Scout"
+  });
+
+  store.syncSessionSnapshot({
+    channels: [
+      { id: "root", name: "Root", position: 0 },
+      { id: "squad", name: "Squad", parentId: "root", position: 0 },
+      { id: "ops", name: "Ops", parentId: "root", position: 1, permissions: { enter: false } }
+    ],
+    participants: [
+      { id: "self", name: "Scout", channelId: "root", status: "live", isSelf: true },
+      { id: "guest", name: "Guest", channelId: "squad", status: "idle" }
+    ]
+  });
+
+  let state = store.joinChannel("squad");
+  assert.equal(state.activeChannelId, "squad");
+  assert.equal(state.participants.find((participant) => participant.isSelf)?.channelId, "squad");
+
+  state = store.joinChannel("ops");
+  assert.equal(state.activeChannelId, "squad");
+  assert.equal(state.participants.find((participant) => participant.isSelf)?.channelId, "squad");
+});
+
 test("AppClientStore incrementally applies channel and participant updates", async () => {
   const store = new AppClientStore({
     waitForConnection: async () => {}
@@ -409,7 +440,14 @@ test("AppClientStore incrementally applies channel and participant updates", asy
   store.upsertChannel({ id: "root", name: "Root", position: 0 });
   store.upsertChannel({ id: "squad", name: "Squad", parentId: "root", position: 0, permissions: { speak: false } });
   store.upsertParticipant({ id: "self", name: "Scout", channelId: "root", status: "live", isSelf: true });
-  store.upsertParticipant({ id: "alpha", name: "Alpha", channelId: "squad", status: "muted" });
+  store.upsertParticipant({
+    id: "alpha",
+    name: "Alpha",
+    channelId: "squad",
+    status: "muted",
+    isMuted: true,
+    isSelfMuted: true
+  });
 
   let state = store.getState();
   assert.deepEqual(state.channels.map((channel) => ({
@@ -421,6 +459,18 @@ test("AppClientStore incrementally applies channel and participant updates", asy
     { id: "root", participantIds: ["self"], depth: 0, speak: true },
     { id: "squad", participantIds: ["alpha"], depth: 1, speak: false }
   ]);
+  assert.deepEqual(state.participants.find((participant) => participant.id === "alpha"), {
+    id: "alpha",
+    name: "Alpha",
+    channelId: "squad",
+    status: "muted",
+    isSelf: undefined,
+    isMuted: true,
+    isDeafened: undefined,
+    isSelfMuted: true,
+    isSelfDeafened: undefined,
+    isSuppressed: undefined
+  });
 
   store.upsertParticipant({ id: "alpha", channelId: "root", status: "live" });
   state = store.getState();
@@ -458,7 +508,7 @@ test("AppClientStore syncLiveSession applies channel tree, active room, roster, 
     ],
     participants: [
       { id: "self", name: "Scout", channelId: "squad", status: "live", isSelf: true },
-      { id: "guest", name: "Guest", channelId: "root", status: "idle" },
+      { id: "guest", name: "Guest", channelId: "root", status: "idle", isSelfMuted: true },
       { id: "orphan", name: "Orphan", channelId: "missing", status: "live" }
     ],
     messages: [
@@ -502,8 +552,30 @@ test("AppClientStore syncLiveSession applies channel tree, active room, roster, 
     { id: "squad", parentId: "root", depth: 1, participantIds: ["self"] }
   ]);
   assert.deepEqual(nextState.participants, [
-    { id: "guest", name: "Guest", channelId: "root", status: "idle", isSelf: undefined },
-    { id: "self", name: "Scout", channelId: "squad", status: "live", isSelf: true }
+    {
+      id: "guest",
+      name: "Guest",
+      channelId: "root",
+      status: "idle",
+      isSelf: undefined,
+      isMuted: undefined,
+      isDeafened: undefined,
+      isSelfMuted: true,
+      isSelfDeafened: undefined,
+      isSuppressed: undefined
+    },
+    {
+      id: "self",
+      name: "Scout",
+      channelId: "squad",
+      status: "live",
+      isSelf: true,
+      isMuted: undefined,
+      isDeafened: undefined,
+      isSelfMuted: undefined,
+      isSelfDeafened: undefined,
+      isSuppressed: undefined
+    }
   ]);
   assert.deepEqual(nextState.messages, [
     {
