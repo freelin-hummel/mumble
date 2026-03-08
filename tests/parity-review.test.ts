@@ -3,11 +3,8 @@ import test from "node:test";
 
 import { desktopScreens } from "../legacy/clients/web-client/src/features.js";
 import {
-  getLegacyParityPrSummary,
   getLegacyParitySummary,
-  getNextLegacyParityWorkItem,
   legacyParityGroups,
-  legacyParityWorkItems,
   reviewedLegacyScreenIds,
   testingGaps,
   webappOnlyCapabilities
@@ -61,51 +58,4 @@ test("parity review preserves concrete testing gaps and new-client-only capabili
     assert.match(capability.summary, /\S/);
     assert.equal(capability.evidence.length > 0, true);
   }
-});
-
-test("parity review derives a deterministic next work item from the grouped inventory", () => {
-  assert.equal(legacyParityWorkItems.length, desktopScreens.length);
-
-  const nextWorkItem = getNextLegacyParityWorkItem();
-
-  assert.notEqual(nextWorkItem, null);
-  assert.deepEqual(nextWorkItem, {
-    id: "server-information",
-    title: "Server Information",
-    group: "Core workspace",
-    status: "missing",
-    sourceUi: "ServerInformation.ui",
-    summary:
-      "Read-only server details, certificates, welcome text, and uptime surfaces.",
-    stubActions: ["Inspect metadata", "Review certificate", "Copy server info"],
-    surfaces: [
-      "Identity summary",
-      "Certificate details",
-      "Version info",
-      "Welcome message"
-    ],
-    groupSummary:
-      "The Electron renderer covers the main voice workspace, a lightweight direct-connect flow with saved-server editing, and basic room chat, but it still lacks the broader server browser, metadata, identity, token, search, and developer-tooling flows from the legacy client.",
-    evidence: [
-      "src/App.tsx:783-828",
-      "src/App.tsx:1044-1132",
-      "tests/app-client-state.test.ts:78-91"
-    ],
-    recommendedBecause:
-      "The Core workspace group already has renderer coverage, so Server Information is the next adjacent missing screen to close before branching into untouched areas."
-  });
-});
-
-test("parity review can format a PR-ready summary from the live inventory", () => {
-  const summary = getLegacyParityPrSummary();
-
-  assert.match(summary, /^## Legacy parity review/m);
-  assert.match(summary, /- Reviewed legacy screens: 40/);
-  assert.match(summary, /- Partially covered legacy screens: 14/);
-  assert.match(summary, /- Missing legacy screens: 26/);
-  assert.match(
-    summary,
-    /- Next recommended work item: `server-information` \(Server Information\) in Core workspace/
-  );
-  assert.match(summary, /- Key actions: Inspect metadata, Review certificate, Copy server info/);
 });

@@ -88,7 +88,6 @@ of those 40 legacy screens today, with the remaining 26 still missing.
   `ptt-button-widget`), preferences (`config-dialog`, `network-config`), shortcuts
   (`global-shortcut`, `global-shortcut-buttons`, `global-shortcut-target`), and administration
   (`failed-connection-dialog`)
-- Run `node parity-review.mjs` for a PR-ready parity summary and next recommended work item
 - Webapp-only additions not present in the legacy screen list: secure transport self-test,
   structured diagnostics export, and renderer-side DSP controls
 

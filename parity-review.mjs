@@ -1,5 +1,3 @@
-import { pathToFileURL } from "node:url";
-
 import { desktopScreens } from "./legacy/clients/web-client/src/features.js";
 
 export const legacyParityGroups = [
@@ -139,57 +137,6 @@ export const reviewedLegacyScreenIds = legacyParityGroups.flatMap((group) => [
   ...group.missingLegacyScreenIds
 ]);
 
-const reviewedLegacyScreenIdSet = new Set(reviewedLegacyScreenIds);
-
-export const legacyParityWorkItems = desktopScreens.flatMap((screen) => {
-  if (!reviewedLegacyScreenIdSet.has(screen.id)) {
-    return [];
-  }
-
-  const parityGroup = legacyParityGroups.find(
-    (group) =>
-      group.partiallyCoveredLegacyScreenIds.includes(screen.id) ||
-      group.missingLegacyScreenIds.includes(screen.id)
-  );
-
-  if (!parityGroup) {
-    throw new Error(`Missing parity group for legacy screen: ${screen.id}`);
-  }
-
-  return [
-    {
-      id: screen.id,
-      title: screen.title,
-      group: parityGroup.group,
-      status: parityGroup.partiallyCoveredLegacyScreenIds.includes(screen.id)
-        ? "partially-covered"
-        : "missing",
-      sourceUi: screen.sourceUi,
-      summary: screen.summary,
-      stubActions: screen.stubActions,
-      surfaces: screen.surfaces,
-      groupSummary: parityGroup.summary,
-      evidence: parityGroup.evidence
-    }
-  ];
-});
-
-function formatGroupCoverage(group) {
-  const partialCount = group.partiallyCoveredLegacyScreenIds.length;
-  const missingCount = group.missingLegacyScreenIds.length;
-  const segments = [];
-
-  if (partialCount > 0) {
-    segments.push(`${partialCount} partial`);
-  }
-
-  if (missingCount > 0) {
-    segments.push(`${missingCount} missing`);
-  }
-
-  return `${group.group} (${segments.join(", ")})`;
-}
-
 export function getLegacyParitySummary() {
   const partiallyCoveredLegacyScreens = legacyParityGroups.reduce(
     (count, group) => count + group.partiallyCoveredLegacyScreenIds.length,
@@ -207,75 +154,4 @@ export function getLegacyParitySummary() {
     fullyImplementedLegacyScreens: 0,
     featureGroups: legacyParityGroups.length
   };
-}
-
-export function getNextLegacyParityWorkItem() {
-  const group =
-    legacyParityGroups.find(
-      (candidate) =>
-        candidate.partiallyCoveredLegacyScreenIds.length > 0 &&
-        candidate.missingLegacyScreenIds.length > 0
-    ) ?? legacyParityGroups.find((candidate) => candidate.missingLegacyScreenIds.length > 0);
-
-  if (!group) {
-    return null;
-  }
-
-  const nextWorkItemId = group.missingLegacyScreenIds[0];
-  const nextWorkItem = legacyParityWorkItems.find((item) => item.id === nextWorkItemId);
-
-  if (!nextWorkItem) {
-    throw new Error(`Missing parity work item for legacy screen: ${nextWorkItemId}`);
-  }
-
-  return {
-    ...nextWorkItem,
-    recommendedBecause:
-      group.partiallyCoveredLegacyScreenIds.length > 0
-        ? `The ${group.group} group already has renderer coverage, so ${nextWorkItem.title} is the next adjacent missing screen to close before branching into untouched areas.`
-        : `${nextWorkItem.title} is the first remaining gap in the ${group.group} group.`
-  };
-}
-
-export function getLegacyParityPrSummary() {
-  const summary = getLegacyParitySummary();
-  const nextWorkItem = getNextLegacyParityWorkItem();
-  const activeCoverage = legacyParityGroups
-    .filter(
-      (group) =>
-        group.partiallyCoveredLegacyScreenIds.length > 0 || group.missingLegacyScreenIds.length > 0
-    )
-    .map(formatGroupCoverage)
-    .join("; ");
-
-  const lines = [
-    "## Legacy parity review",
-    `- Reviewed legacy screens: ${summary.totalLegacyScreens}`,
-    `- Partially covered legacy screens: ${summary.partiallyCoveredLegacyScreens}`,
-    `- Missing legacy screens: ${summary.missingLegacyScreens}`,
-    `- Feature groups tracked: ${summary.featureGroups}`,
-    `- Current grouped coverage: ${activeCoverage}`
-  ];
-
-  if (nextWorkItem) {
-    lines.push(
-      `- Next recommended work item: \`${nextWorkItem.id}\` (${nextWorkItem.title}) in ${nextWorkItem.group}`,
-      `- Why next: ${nextWorkItem.recommendedBecause}`,
-      `- Legacy scope: ${nextWorkItem.summary}`,
-      `- Key actions: ${nextWorkItem.stubActions.join(", ")}`,
-      `- Key surfaces: ${nextWorkItem.surfaces.join(", ")}`
-    );
-  }
-
-  return lines.join("\n");
-}
-
-export const getLegacyParityPullRequestSummary = getLegacyParityPrSummary;
-
-const isDirectExecution =
-  typeof process.argv[1] === "string" &&
-  import.meta.url === pathToFileURL(process.argv[1]).href;
-
-if (isDirectExecution) {
-  console.log(getLegacyParityPrSummary());
 }
