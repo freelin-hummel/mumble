@@ -21,8 +21,8 @@ export const shortcutTargetOptions = [
   },
   {
     value: "cycleChannel",
-    label: "Cycle room",
-    description: "Move to the next available room in the current channel list."
+    label: "Cycle channel",
+    description: "Move to the next available channel in the current channel list."
   }
 ] as const;
 

@@ -1695,7 +1695,7 @@ export function App() {
                         <Box>
                           <Text size="2">Shortcut targets</Text>
                           <Text size="1" color="gray">
-                            Add renderer shortcuts for quick actions like mute, diagnostics, output routing, and room cycling.
+                            Add renderer shortcuts for quick actions like mute, diagnostics, output routing, and channel cycling.
                           </Text>
                         </Box>
                         {shortcutBindings.length === 0 ? (
