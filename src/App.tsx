@@ -2815,9 +2815,10 @@ export function App() {
                                 }}
                               >
                                 <Flex
+                                  className="compact-setting-row"
                                   align="center"
                                   justify="between"
-                                  style={{ width: "100%", padding: "4px 0" }}
+                                  style={{ width: "100%" }}
                                 >
                                   <Flex align="center" gap="2">
                                     <Box
