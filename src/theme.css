@@ -37,7 +37,7 @@ body {
 }
 
 main {
-  padding: 14px 16px 18px;
+  padding: 10px 12px 14px;
 }
 
 .subtle-grid {
@@ -55,6 +55,7 @@ main {
 
 .section-card {
   border: 1px solid rgb(var(--app-border-strong-rgb) / 0.55);
+  padding: 10px 12px;
 }
 
 .app-shell,
@@ -74,6 +75,19 @@ main {
     rgb(var(--app-surface-strong-rgb) / 0.94)
   );
   backdrop-filter: blur(10px);
+  padding: 10px 12px;
+}
+
+.compact-tab-shell {
+  padding: 8px;
+}
+
+.workspace-tab-button {
+  min-width: 88px;
+}
+
+.compact-inline-card {
+  padding: 8px 10px;
 }
 
 .channel-row-button,
@@ -109,6 +123,36 @@ main {
   ) !important;
 }
 
+.compact-inline-action {
+  min-width: 0;
+}
+
+.compact-setting-row {
+  padding: 4px 0;
+}
+
+.compact-binding-row {
+  padding: 4px 0;
+  border-top: 1px solid rgb(var(--app-border-rgb) / 0.35);
+}
+
+.compact-binding-control {
+  width: auto;
+  min-width: 150px;
+  flex: 1 1 150px;
+}
+
+.chat-message-list {
+  scrollbar-width: thin;
+}
+
+.chat-message-row {
+  padding: 6px 8px;
+  border: 1px solid rgb(var(--app-border-rgb) / 0.45);
+  border-radius: 10px;
+  background: rgb(var(--app-bg-rgb) / 0.26);
+}
+
 .compact-avatar {
   width: 32px !important;
   height: 32px !important;
@@ -117,12 +161,12 @@ main {
 
 .device-field {
   display: grid;
-  gap: 6px;
+  gap: 4px;
 }
 
 .device-select {
   width: 100%;
-  padding: 8px 10px;
+  padding: 6px 8px;
   border-radius: 10px;
   border: 1px solid rgb(var(--app-border-strong-rgb) / 0.7);
   background: rgb(var(--app-bg-rgb) / 0.86);
@@ -137,12 +181,12 @@ main {
 
 .meter-stack {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .meter-field {
   display: grid;
-  gap: 6px;
+  gap: 4px;
 }
 
 .audio-meter {
@@ -215,7 +259,7 @@ main {
 }
 
 .talking-popout-main {
-  padding: 12px;
+  padding: 8px;
 }
 
 @keyframes fadeIn {

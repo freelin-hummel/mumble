@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Card, Flex, Text } from "@radix-ui/themes";
+import { Button, Flex, Text } from "@radix-ui/themes";
 
 type QuickActionProps = {
   title: string;
@@ -12,28 +12,27 @@ type QuickActionProps = {
 
 export function QuickAction({ title, description, icon, active = false, disabled = false, onClick }: QuickActionProps) {
   return (
-    <Card
-      className="section-card"
+    <Button
+      className="compact-inline-action"
+      variant={active ? "solid" : "soft"}
+      color={active ? "cyan" : undefined}
+      size="2"
       style={{
-        height: "100%",
         cursor: onClick && !disabled ? "pointer" : "default",
-        boxShadow: active ? "inset 0 0 0 1px rgba(45, 212, 191, 0.6)" : undefined,
-        opacity: disabled ? 0.6 : 1
+        justifyContent: "flex-start",
+        opacity: disabled ? 0.6 : 1,
       }}
       onClick={disabled ? undefined : onClick}
       aria-disabled={disabled}
+      disabled={disabled}
+      title={description}
     >
-      <Flex direction="column" gap="2">
-        <Flex align="center" gap="2">
-          {icon}
-          <Text size="2" weight="bold">
-            {title}
-          </Text>
-        </Flex>
-        <Text size="1" color="gray">
-          {description}
+      <Flex align="center" gap="2">
+        {icon}
+        <Text size="2" weight="bold">
+          {title}
         </Text>
       </Flex>
-    </Card>
+    </Button>
   );
 }
