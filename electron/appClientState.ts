@@ -48,7 +48,9 @@ export type AppClientChatMessage = {
   author: string;
   body: string;
   channelId: string | null;
+  participantId?: string;
   sentAt: string;
+  severity?: "error";
   isSelf?: boolean;
 };
 
@@ -143,6 +145,12 @@ type AppClientStoreOptions = {
 export type AppClientConnectRequest = {
   serverAddress: string;
   nickname: string;
+};
+
+export type AppClientSendChatMessageRequest = {
+  body: string;
+  channelId?: string | null;
+  participantId?: string | null;
 };
 
 export type AppClientChannelSnapshot = {
@@ -249,6 +257,7 @@ const cloneState = <T>(value: T): T => {
 
   return JSON.parse(JSON.stringify(value)) as T;
 };
+const isNonNull = <T>(value: T | null): value is T => value !== null;
 
 const clampGain = (value: number) => Math.min(150, Math.max(0, Math.round(value)));
 const compareText = (left: string, right: string) => left.localeCompare(right, undefined, {
@@ -298,7 +307,7 @@ const normalizeId = (value: string | null | undefined) => {
 };
 const normalizeChannelPermissions = (
   permissions?: Partial<AppClientChannelPermissions> | null,
-  fallback: AppClientChannelPermissions = defaultChannelPermissions
+  fallback: Partial<AppClientChannelPermissions> = defaultChannelPermissions
 ): AppClientChannelPermissions => ({
   traverse: typeof permissions?.traverse === "boolean" ? permissions.traverse : fallback.traverse,
   enter: typeof permissions?.enter === "boolean" ? permissions.enter : fallback.enter,
@@ -460,7 +469,7 @@ const normalizeSessionState = (
         isSelf: participant.isSelf === true ? true : undefined
       } satisfies AppClientParticipant;
     })
-    .filter((participant): participant is AppClientParticipant => participant !== null)
+    .filter(isNonNull)
     .sort((left, right) => (
       (orderedChannelIds.get(left.channelId) ?? -1)
         - (orderedChannelIds.get(right.channelId) ?? -1)
@@ -766,7 +775,8 @@ const normalizeChatMessageList = (messages: AppClientChatMessage[], channelIds: 
       return false;
     }
 
-    if (message.channelId !== null && !channelIds.has(message.channelId)) {
+    const normalizedChannelId = normalizeId(message.channelId);
+    if (normalizedChannelId !== null && !channelIds.has(normalizedChannelId)) {
       return false;
     }
 
@@ -776,8 +786,10 @@ const normalizeChatMessageList = (messages: AppClientChatMessage[], channelIds: 
     id: message.id,
     author: message.author.trim(),
     body: message.body.trim(),
-    channelId: message.channelId,
+    channelId: normalizeId(message.channelId),
+    ...(normalizeId(message.participantId) ? { participantId: normalizeId(message.participantId) ?? undefined } : {}),
     sentAt: Number.isNaN(Date.parse(message.sentAt)) ? new Date(0).toISOString() : message.sentAt,
+    ...(message.severity === "error" ? { severity: "error" as const } : {}),
     isSelf: message.isSelf === true ? true : undefined
   })).slice(-MAX_CHAT_MESSAGES);
 };
@@ -802,7 +814,10 @@ export const mergeLiveSessionState = (currentState: AppClientState, session: App
     currentState.activeChannelId
   );
   const channelIds = new Set(normalizedSessionState.channels.map((channel) => channel.id));
-  const messages = normalizeChatMessageList(session.messages ?? currentState.messages, channelIds);
+  const messages = normalizeChatMessageList([
+    ...currentState.messages,
+    ...(session.messages ?? [])
+  ], channelIds);
 
   return {
     ...currentState,
@@ -826,21 +841,57 @@ const buildLocalChatMessageId = () => {
   return `chat-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 };
 
-export const appendLocalChatMessageState = (currentState: AppClientState, body: string): AppClientState => {
-  if (currentState.connection.status !== "connected") {
-    throw new Error("Join a server before sending chat.");
-  }
+const resolveSendChatRequest = (
+  currentState: AppClientState,
+  request: string | AppClientSendChatMessageRequest
+) => {
+  const payload = typeof request === "string"
+    ? { body: request, channelId: currentState.activeChannelId }
+    : request;
+  const normalizedBody = payload.body.trim();
+  const normalizedParticipantId = normalizeId(payload.participantId);
+  const normalizedChannelId = normalizedParticipantId === null
+    ? normalizeId(payload.channelId ?? currentState.activeChannelId)
+    : null;
 
-  const normalizedBody = body.trim();
   if (!normalizedBody) {
     throw new Error("Enter a message before sending.");
   }
 
+  if (normalizedParticipantId !== null) {
+    const participant = currentState.participants.find((entry) => entry.id === normalizedParticipantId);
+    if (!participant || participant.isSelf) {
+      throw new Error("Choose someone else in the session before sending a direct message.");
+    }
+  } else if (normalizedChannelId === null) {
+    throw new Error("Choose a room before sending chat.");
+  } else if (!currentState.channels.some((channel) => channel.id === normalizedChannelId)) {
+    throw new Error("Choose a room that is still available before sending chat.");
+  }
+
+  return {
+    body: normalizedBody,
+    channelId: normalizedChannelId,
+    participantId: normalizedParticipantId
+  };
+};
+
+export const appendLocalChatMessageState = (
+  currentState: AppClientState,
+  request: string | AppClientSendChatMessageRequest
+): AppClientState => {
+  if (currentState.connection.status !== "connected") {
+    throw new Error("Join a server before sending chat.");
+  }
+
+  const normalizedRequest = resolveSendChatRequest(currentState, request);
+
   const nextMessage: AppClientChatMessage = {
     id: buildLocalChatMessageId(),
     author: currentState.connection.nickname || "You",
-    body: normalizedBody,
-    channelId: currentState.activeChannelId,
+    body: normalizedRequest.body,
+    channelId: normalizedRequest.channelId,
+    ...(normalizedRequest.participantId ? { participantId: normalizedRequest.participantId } : {}),
     sentAt: new Date().toISOString(),
     isSelf: true
   };
@@ -1299,8 +1350,8 @@ export class AppClientStore {
     return this.getState();
   }
 
-  public sendChatMessage(body: string) {
-    this.updateState((currentState) => appendLocalChatMessageState(currentState, body));
+  public sendChatMessage(request: string | AppClientSendChatMessageRequest) {
+    this.updateState((currentState) => appendLocalChatMessageState(currentState, request));
     return this.getState();
   }
 

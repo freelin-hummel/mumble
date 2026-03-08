@@ -70,6 +70,12 @@ import {
   findNextNavigableChannel,
   formatTransportActivity,
 } from "./sessionQuickActions";
+import {
+  getChatMessagesForTarget,
+  getChatTargetKey,
+  getChatViewTarget,
+  getUnreadCountForTarget,
+} from "./chatState";
 import { createTestServerSessions } from "./testServerSession.js";
 
 const fallbackAppState: AppClientState = {
@@ -172,20 +178,24 @@ const buildRecentServers = (recentServers: string[], serverAddress: string) => {
 
 const buildFavoriteServers = (
   favoriteServers: AppClientPreferences["favoriteServers"],
-  serverAddress: string
+  serverAddress: string,
 ) => {
   const normalizedAddress = serverAddress.trim();
   if (normalizedAddress.length === 0) {
     return favoriteServers;
   }
 
-  const existingFavorite = favoriteServers.find((favoriteServer) => favoriteServer.address === normalizedAddress);
+  const existingFavorite = favoriteServers.find(
+    (favoriteServer) => favoriteServer.address === normalizedAddress,
+  );
   return [
     {
       address: normalizedAddress,
-      label: existingFavorite?.label ?? normalizedAddress
+      label: existingFavorite?.label ?? normalizedAddress,
     },
-    ...favoriteServers.filter((favoriteServer) => favoriteServer.address !== normalizedAddress)
+    ...favoriteServers.filter(
+      (favoriteServer) => favoriteServer.address !== normalizedAddress,
+    ),
   ].slice(0, 10);
 };
 
@@ -357,6 +367,9 @@ export function App() {
   const [selectedParticipantId, setSelectedParticipantId] = useState<
     string | null
   >(null);
+  const [readChatMessageIdsByTarget, setReadChatMessageIdsByTarget] = useState<
+    Record<string, string[]>
+  >({});
   const [participantNicknameDraft, setParticipantNicknameDraft] = useState("");
   const outputPreviewRef = useRef<HTMLAudioElement>(null);
   const diagnosticsSectionRef = useRef<HTMLDivElement>(null);
@@ -401,13 +414,14 @@ export function App() {
   );
 
   const syncFormState = useCallback((state: AppClientState) => {
-    setServerAddress((currentValue) => (
-      currentValue
-      || state.connection.serverAddress
-      || state.recentServers[0]
-      || state.preferences.favoriteServers[0]?.address
-      || ""
-    ));
+    setServerAddress(
+      (currentValue) =>
+        currentValue ||
+        state.connection.serverAddress ||
+        state.recentServers[0] ||
+        state.preferences.favoriteServers[0]?.address ||
+        "",
+    );
     setNickname((currentValue) => currentValue || state.connection.nickname);
   }, []);
 
@@ -541,9 +555,12 @@ export function App() {
     [updateLocalAppState],
   );
 
-  const updateFavoriteServers = useCallback((favoriteServers: AppClientPreferences["favoriteServers"]) => {
-    void updatePreferences({ favoriteServers });
-  }, [updatePreferences]);
+  const updateFavoriteServers = useCallback(
+    (favoriteServers: AppClientPreferences["favoriteServers"]) => {
+      void updatePreferences({ favoriteServers });
+    },
+    [updatePreferences],
+  );
 
   const rememberServer = useCallback(
     async (nextServerAddress: string) => {
@@ -582,20 +599,34 @@ export function App() {
     setFormError(null);
   }, []);
 
-  const loadFavoriteServer = useCallback((favoriteServer: AppClientPreferences["favoriteServers"][number]) => {
-    setServerAddress(favoriteServer.address);
-    setFormError(null);
-  }, []);
+  const loadFavoriteServer = useCallback(
+    (favoriteServer: AppClientPreferences["favoriteServers"][number]) => {
+      setServerAddress(favoriteServer.address);
+      setFormError(null);
+    },
+    [],
+  );
 
   const saveFavoriteServer = useCallback(() => {
-    updateFavoriteServers(buildFavoriteServers(appState.preferences.favoriteServers, serverAddress));
-  }, [appState.preferences.favoriteServers, serverAddress, updateFavoriteServers]);
+    updateFavoriteServers(
+      buildFavoriteServers(appState.preferences.favoriteServers, serverAddress),
+    );
+  }, [
+    appState.preferences.favoriteServers,
+    serverAddress,
+    updateFavoriteServers,
+  ]);
 
-  const removeFavoriteServer = useCallback((favoriteAddress: string) => {
-    updateFavoriteServers(appState.preferences.favoriteServers.filter((favoriteServer) => (
-      favoriteServer.address !== favoriteAddress
-    )));
-  }, [appState.preferences.favoriteServers, updateFavoriteServers]);
+  const removeFavoriteServer = useCallback(
+    (favoriteAddress: string) => {
+      updateFavoriteServers(
+        appState.preferences.favoriteServers.filter(
+          (favoriteServer) => favoriteServer.address !== favoriteAddress,
+        ),
+      );
+    },
+    [appState.preferences.favoriteServers, updateFavoriteServers],
+  );
 
   useEffect(() => {
     audioSettingsRef.current = {
@@ -622,7 +653,9 @@ export function App() {
   }, [voiceActivation]);
 
   useEffect(() => {
-    setDspPipelineState(createDspPipeline(appState.preferences.voiceProcessing));
+    setDspPipelineState(
+      createDspPipeline(appState.preferences.voiceProcessing),
+    );
   }, [appState.preferences.voiceProcessing]);
 
   const refreshAudioDevices = useCallback(async () => {
@@ -1254,15 +1287,6 @@ export function App() {
       ),
     [appState.activeChannelId, appState.participants],
   );
-  const activeMessages = useMemo(
-    () =>
-      appState.messages.filter(
-        (message) =>
-          message.channelId === null ||
-          message.channelId === appState.activeChannelId,
-      ),
-    [appState.activeChannelId, appState.messages],
-  );
   const selectedParticipant = useMemo(
     () =>
       appState.participants.find(
@@ -1278,6 +1302,18 @@ export function App() {
           ) ?? null)
         : null,
     [appState.channels, selectedParticipant],
+  );
+  const chatTarget = useMemo(
+    () => getChatViewTarget(appState, selectedParticipantId),
+    [appState, selectedParticipantId],
+  );
+  const activeMessages = useMemo(
+    () => getChatMessagesForTarget(appState.messages, chatTarget),
+    [appState.messages, chatTarget],
+  );
+  const activeChatTargetKey = useMemo(
+    () => getChatTargetKey(chatTarget),
+    [chatTarget],
   );
   const connectionError = formError ?? appState.connection.error;
   const connectionServerAddress =
@@ -1356,6 +1392,52 @@ export function App() {
 
     setParticipantNicknameDraft(localNicknames[selectedParticipant.id] ?? "");
   }, [localNicknames, selectedParticipant]);
+
+  useEffect(() => {
+    const nextReadMessageIds = activeMessages
+      .filter((message) => !message.isSelf)
+      .map((message) => message.id);
+
+    setReadChatMessageIdsByTarget((currentState) => {
+      const currentReadMessageIds = currentState[activeChatTargetKey] ?? [];
+      if (
+        currentReadMessageIds.length === nextReadMessageIds.length &&
+        currentReadMessageIds.every(
+          (messageId, index) => messageId === nextReadMessageIds[index],
+        )
+      ) {
+        return currentState;
+      }
+
+      return {
+        ...currentState,
+        [activeChatTargetKey]: nextReadMessageIds,
+      };
+    });
+  }, [activeChatTargetKey, activeMessages]);
+
+  useEffect(() => {
+    const nextReadMessageIds = activeMessages
+      .filter((message) => !message.isSelf)
+      .map((message) => message.id);
+
+    setReadChatMessageIdsByTarget((currentState) => {
+      const currentReadMessageIds = currentState[activeChatTargetKey] ?? [];
+      if (
+        currentReadMessageIds.length === nextReadMessageIds.length &&
+        currentReadMessageIds.every(
+          (messageId, index) => messageId === nextReadMessageIds[index],
+        )
+      ) {
+        return currentState;
+      }
+
+      return {
+        ...currentState,
+        [activeChatTargetKey]: nextReadMessageIds,
+      };
+    });
+  }, [activeChatTargetKey, activeMessages]);
 
   const connectToServer = async () => {
     const normalizedServerAddress = serverAddress.trim();
@@ -1713,9 +1795,14 @@ export function App() {
 
     setFormError(null);
 
+    const chatRequest =
+      chatTarget.type === "participant"
+        ? { body: chatDraft, participantId: chatTarget.participantId }
+        : { body: chatDraft, channelId: chatTarget.channelId };
+
     if (window.app?.sendChatMessage) {
       try {
-        const nextState = await window.app.sendChatMessage(chatDraft);
+        const nextState = await window.app.sendChatMessage(chatRequest);
         setAppState(nextState);
         setChatDraft("");
       } catch (error) {
@@ -1728,7 +1815,7 @@ export function App() {
 
     try {
       updateLocalAppState((currentState) =>
-        appendLocalChatMessageState(currentState, chatDraft),
+        appendLocalChatMessageState(currentState, chatRequest),
       );
       setChatDraft("");
     } catch (error) {
@@ -1763,6 +1850,24 @@ export function App() {
     void updatePreferences({ voiceProcessing: normalizedSettings });
   };
   const trimmedServerAddress = serverAddress.trim();
+  const selectedParticipantDisplayName = selectedParticipant
+    ? getParticipantDisplayName(selectedParticipant, localNicknames)
+    : null;
+  const chatSubtitle =
+    chatTarget.type === "participant" && selectedParticipantDisplayName
+      ? `Direct messages with ${selectedParticipantDisplayName}`
+      : activeChannel
+        ? `Messages in ${activeChannel.name}`
+        : "Basic room chat";
+  const chatPlaceholder =
+    chatTarget.type === "participant" && selectedParticipantDisplayName
+      ? `Message ${selectedParticipantDisplayName} privately`
+      : activeChannel
+        ? `Message ${activeChannel.name}`
+        : "Message the active room";
+  const canSendChat =
+    appState.connection.status === "connected" &&
+    (chatTarget.type === "participant" || chatTarget.channelId !== null);
 
   return (
     <Theme accentColor="cyan" grayColor="slate" radius="large" scaling="105%">
@@ -1863,7 +1968,10 @@ export function App() {
                           variant="outline"
                           type="button"
                           onClick={saveFavoriteServer}
-                          disabled={appState.connection.status === "connecting" || trimmedServerAddress.length === 0}
+                          disabled={
+                            appState.connection.status === "connecting" ||
+                            trimmedServerAddress.length === 0
+                          }
                         >
                           Add favorite
                         </Button>
@@ -1883,21 +1991,36 @@ export function App() {
                         </Button>
                       </Flex>
                       {favoriteServers.length > 0 ? (
-                        <Flex direction="column" gap="2" style={{ marginTop: 12 }}>
+                        <Flex
+                          direction="column"
+                          gap="2"
+                          style={{ marginTop: 12 }}
+                        >
                           <Text size="2" color="gray">
                             Favorite servers
                           </Text>
                           <Flex gap="2" align="center" wrap="wrap">
                             {favoriteServers.map((favoriteServer) => (
-                              <Flex key={favoriteServer.address} gap="1" align="center">
+                              <Flex
+                                key={favoriteServer.address}
+                                gap="1"
+                                align="center"
+                              >
                                 <Button
                                   size="1"
-                                  variant={trimmedServerAddress === favoriteServer.address ? "solid" : "soft"}
+                                  variant={
+                                    trimmedServerAddress ===
+                                    favoriteServer.address
+                                      ? "solid"
+                                      : "soft"
+                                  }
                                   type="button"
                                   onClick={() => {
                                     loadFavoriteServer(favoriteServer);
                                   }}
-                                  disabled={appState.connection.status === "connecting"}
+                                  disabled={
+                                    appState.connection.status === "connecting"
+                                  }
                                 >
                                   {favoriteServer.label}
                                 </Button>
@@ -1908,9 +2031,13 @@ export function App() {
                                   type="button"
                                   aria-label={`Remove favorite ${favoriteServer.label}`}
                                   onClick={() => {
-                                    removeFavoriteServer(favoriteServer.address);
+                                    removeFavoriteServer(
+                                      favoriteServer.address,
+                                    );
                                   }}
-                                  disabled={appState.connection.status === "connecting"}
+                                  disabled={
+                                    appState.connection.status === "connecting"
+                                  }
                                 >
                                   ×
                                 </IconButton>
@@ -2337,6 +2464,16 @@ export function App() {
                           channel.id === appState.activeChannelId;
                         const isJoined =
                           channel.id === selfParticipant?.channelId;
+                        const unreadCount = getUnreadCountForTarget(
+                          appState.messages,
+                          { type: "channel", channelId: channel.id },
+                          readChatMessageIdsByTarget[
+                            getChatTargetKey({
+                              type: "channel",
+                              channelId: channel.id,
+                            })
+                          ],
+                        );
                         return (
                           <Flex key={channel.id} gap="2" align="stretch">
                             <Button
@@ -2374,6 +2511,15 @@ export function App() {
                                   {isJoined ? (
                                     <Badge color="green" variant="soft">
                                       Joined
+                                    </Badge>
+                                  ) : null}
+                                  {!isActive && unreadCount > 0 ? (
+                                    <Badge
+                                      size="1"
+                                      color="orange"
+                                      variant="soft"
+                                    >
+                                      {unreadCount} new
                                     </Badge>
                                   ) : null}
                                 </Flex>
@@ -2416,78 +2562,104 @@ export function App() {
                   />
                   {activeParticipants.length > 0 ? (
                     <Flex direction="column" gap="3">
-                      {activeParticipants.map((participant) => (
-                        <Button
-                          key={participant.id}
-                          type="button"
-                          variant={
-                            selectedParticipantId === participant.id
-                              ? "soft"
-                              : "ghost"
-                          }
-                          onClick={() => {
-                            setSelectedParticipantId(participant.id);
-                            setFormError(null);
-                          }}
-                          style={{
-                            justifyContent: "space-between",
-                            width: "100%",
-                            height: "auto",
-                            padding: 0,
-                          }}
-                        >
-                          <Flex
-                            align="center"
-                            justify="between"
-                            style={{ width: "100%", padding: "6px 0" }}
+                      {activeParticipants.map((participant) => {
+                        const unreadCount = participant.isSelf
+                          ? 0
+                          : getUnreadCountForTarget(
+                              appState.messages,
+                              {
+                                type: "participant",
+                                participantId: participant.id,
+                              },
+                              readChatMessageIdsByTarget[
+                                getChatTargetKey({
+                                  type: "participant",
+                                  participantId: participant.id,
+                                })
+                              ],
+                            );
+                        return (
+                          <Button
+                            key={participant.id}
+                            type="button"
+                            variant={
+                              selectedParticipantId === participant.id
+                                ? "soft"
+                                : "ghost"
+                            }
+                            onClick={() => {
+                              setSelectedParticipantId(participant.id);
+                              setFormError(null);
+                            }}
+                            style={{
+                              justifyContent: "space-between",
+                              width: "100%",
+                              height: "auto",
+                              padding: 0,
+                            }}
                           >
-                            <Flex align="center" gap="3">
-                              <Box
-                                style={{
-                                  width: 38,
-                                  height: 38,
-                                  borderRadius: 12,
-                                  background: "rgba(255,255,255,0.08)",
-                                  display: "grid",
-                                  placeItems: "center",
-                                }}
-                              >
-                                <PersonIcon />
-                              </Box>
-                              <Box>
-                                <Text size="3">
-                                  {getParticipantDisplayName(
-                                    participant,
-                                    localNicknames,
-                                  )}
-                                </Text>
-                                <Flex align="center" gap="2" wrap="wrap">
-                                  {localNicknames[participant.id] ? (
-                                    <Text size="1" color="gray">
-                                      Server name: {participant.name}
-                                    </Text>
-                                  ) : null}
-                                  {getParticipantStateLabels(participant).map(
-                                    (label) => (
+                            <Flex
+                              align="center"
+                              justify="between"
+                              style={{ width: "100%", padding: "6px 0" }}
+                            >
+                              <Flex align="center" gap="3">
+                                <Box
+                                  style={{
+                                    width: 38,
+                                    height: 38,
+                                    borderRadius: 12,
+                                    background: "rgba(255,255,255,0.08)",
+                                    display: "grid",
+                                    placeItems: "center",
+                                  }}
+                                >
+                                  <PersonIcon />
+                                </Box>
+                                <Box>
+                                  <Text size="3">
+                                    {getParticipantDisplayName(
+                                      participant,
+                                      localNicknames,
+                                    )}
+                                  </Text>
+                                  <Flex align="center" gap="2" wrap="wrap">
+                                    {localNicknames[participant.id] ? (
+                                      <Text size="1" color="gray">
+                                        Server name: {participant.name}
+                                      </Text>
+                                    ) : null}
+                                    {getParticipantStateLabels(participant).map(
+                                      (label) => (
+                                        <Badge
+                                          key={`${participant.id}-${label}`}
+                                          variant="soft"
+                                          color="gray"
+                                        >
+                                          {label}
+                                        </Badge>
+                                      ),
+                                    )}
+                                    {!participant.isSelf && unreadCount > 0 ? (
                                       <Badge
-                                        key={`${participant.id}-${label}`}
+                                        size="1"
+                                        color="orange"
                                         variant="soft"
-                                        color="gray"
                                       >
-                                        {label}
+                                        {unreadCount} new
                                       </Badge>
-                                    ),
-                                  )}
-                                </Flex>
-                              </Box>
+                                    ) : null}
+                                  </Flex>
+                                </Box>
+                              </Flex>
+                              <StatusChip
+                                status={participant.status}
+                                label={getParticipantStatusLabel(participant)}
+                              />
                             </Flex>
-                            <StatusChip
-                              status={participant.status}
-                              label={getParticipantStatusLabel(participant)}
-                            />
-                          </Flex>
-                        </Button>
-                      ))}
+                          </Button>
+                        );
+                      })}
                     </Flex>
                   ) : (
                     <Text size="2" color="gray">
@@ -2621,14 +2793,7 @@ export function App() {
 
               <Card className="section-card fade-in delay-2">
                 <Flex direction="column" gap="4">
-                  <SectionHeader
-                    title="Chat"
-                    subtitle={
-                      activeChannel
-                        ? `Messages in ${activeChannel.name}`
-                        : "Basic room chat"
-                    }
-                  />
+                  <SectionHeader title="Chat" subtitle={chatSubtitle} />
                   {activeMessages.length > 0 ? (
                     <Flex
                       direction="column"
@@ -2652,15 +2817,53 @@ export function App() {
                                     You
                                   </Badge>
                                 ) : null}
+                                {message.participantId ? (
+                                  <Badge size="1" color="violet" variant="soft">
+                                    Direct
+                                  </Badge>
+                                ) : null}
+                                {message.severity === "error" ? (
+                                  <Badge size="1" color="ruby" variant="soft">
+                                    Error
+                                  </Badge>
+                                ) : null}
                               </Flex>
                               <Text size="1" color="gray">
                                 {formatChatTimestamp(message.sentAt)}
                               </Text>
                             </Flex>
-                            <Text size="2">{message.body}</Text>
-                            {message.channelId === null ? (
+                            <Text
+                              size="2"
+                              color={
+                                message.severity === "error"
+                                  ? "ruby"
+                                  : undefined
+                              }
+                            >
+                              {message.body}
+                            </Text>
+                            {message.participantId ? (
                               <Text size="1" color="gray">
-                                Server notice
+                                Direct message
+                              </Text>
+                            ) : message.channelId === null ? (
+                              <Text
+                                size="1"
+                                color={
+                                  message.severity === "error" ? "ruby" : "gray"
+                                }
+                              >
+                                {message.severity === "error"
+                                  ? "Server error"
+                                  : "Server notice"}
+                              </Text>
+                            ) : null}
+                            {message.participantId &&
+                            selectedParticipantDisplayName &&
+                            chatTarget.type === "participant" ? (
+                              <Text size="1" color="gray">
+                                Conversation with{" "}
+                                {selectedParticipantDisplayName}
                               </Text>
                             ) : null}
                           </Flex>
@@ -2682,29 +2885,29 @@ export function App() {
                   >
                     <Flex direction={{ initial: "column", sm: "row" }} gap="3">
                       <TextField.Root
-                        placeholder={
-                          activeChannel
-                            ? `Message ${activeChannel.name}`
-                            : "Message the active room"
-                        }
+                        placeholder={chatPlaceholder}
                         value={chatDraft}
                         onChange={(event) => {
                           setChatDraft(event.target.value);
                         }}
-                        disabled={appState.connection.status !== "connected"}
+                        disabled={!canSendChat}
                         style={{ flex: 1 }}
                       >
                         <TextField.Slot>
                           <ChatBubbleIcon />
                         </TextField.Slot>
                       </TextField.Root>
-                      <Button
-                        type="submit"
-                        disabled={appState.connection.status !== "connected"}
-                      >
+                      <Button type="submit" disabled={!canSendChat}>
                         Send
                       </Button>
                     </Flex>
+                    {chatTarget.type === "participant" &&
+                    selectedParticipantDisplayName ? (
+                      <Text size="1" color="gray">
+                        Private replies go to {selectedParticipantDisplayName}.
+                        Clear the participant selection to return to room chat.
+                      </Text>
+                    ) : null}
                   </form>
                 </Flex>
               </Card>
@@ -2775,7 +2978,9 @@ export function App() {
                             );
                             setDspPipelineState(nextPipeline);
                             void updatePreferences({
-                              voiceProcessing: persistDspSettings(nextPipeline.settings),
+                              voiceProcessing: persistDspSettings(
+                                nextPipeline.settings,
+                              ),
                             });
                           }}
                         />
@@ -3232,8 +3437,11 @@ export function App() {
                       />
                     </Flex>
                     <Text size="2" color="gray">
-                      Favorites: {favoriteServers.length > 0
-                        ? favoriteServers.map((favoriteServer) => favoriteServer.label).join(" • ")
+                      Favorites:{" "}
+                      {favoriteServers.length > 0
+                        ? favoriteServers
+                            .map((favoriteServer) => favoriteServer.label)
+                            .join(" • ")
                         : "None yet"}
                     </Text>
                     <Text size="2" color="gray">

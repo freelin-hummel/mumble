@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   AppClientStore,
   PERSISTED_APP_CLIENT_STATE_VERSION,
+  mergeLiveSessionState,
   migratePersistedAppClientState
 } from "../electron/appClientState.js";
 
@@ -753,4 +754,144 @@ test("AppClientStore sendChatMessage appends a self-authored room message", asyn
   assert.equal(nextState.messages[0]?.body, "Ready to roll.");
   assert.equal(nextState.messages[0]?.channelId, "lobby");
   assert.equal(nextState.messages[0]?.isSelf, true);
+});
+
+test("AppClientStore sendChatMessage supports direct messages to another participant", async () => {
+  const store = new AppClientStore({
+    waitForConnection: async () => {}
+  });
+
+  await store.connect({
+    serverAddress: "voice.example.test:64738",
+    nickname: "Scout"
+  });
+
+  store.syncLiveSession({
+    channels: [
+      { id: "lobby", name: "Lobby", parentId: null }
+    ],
+    participants: [
+      { id: "self", name: "Scout", channelId: "lobby", status: "live", isSelf: true },
+      { id: "atlas", name: "Atlas", channelId: "lobby", status: "live" }
+    ]
+  });
+
+  const nextState = store.sendChatMessage({
+    body: "  Message me when you land.  ",
+    participantId: "atlas"
+  });
+
+  assert.equal(nextState.messages.length, 1);
+  assert.equal(nextState.messages[0]?.author, "Scout");
+  assert.equal(nextState.messages[0]?.body, "Message me when you land.");
+  assert.equal(nextState.messages[0]?.channelId, null);
+  assert.equal(nextState.messages[0]?.participantId, "atlas");
+  assert.equal(nextState.messages[0]?.isSelf, true);
+});
+
+test("mergeLiveSessionState preserves local chat messages while appending incoming session updates", () => {
+  const nextState = mergeLiveSessionState({
+    connection: {
+      status: "connected",
+      serverAddress: "voice.example.test:64738",
+      nickname: "Scout",
+      error: null
+    },
+    channels: [
+      {
+        id: "lobby",
+        name: "Lobby",
+        parentId: null,
+        depth: 0,
+        position: 0,
+        permissions: {
+          traverse: true,
+          enter: true,
+          speak: true,
+          muteDeafen: false,
+          move: false,
+          write: true
+        },
+        participantIds: ["self", "atlas"]
+      }
+    ],
+    activeChannelId: "lobby",
+    participants: [
+      { id: "self", name: "Scout", channelId: "lobby", status: "live", isSelf: true },
+      { id: "atlas", name: "Atlas", channelId: "lobby", status: "live" }
+    ],
+    messages: [
+      {
+        id: "welcome",
+        author: "Server",
+        body: "Welcome aboard",
+        channelId: null,
+        sentAt: "2026-03-07T22:00:00.000Z"
+      },
+      {
+        id: "local",
+        author: "Scout",
+        body: "Ready to roll.",
+        channelId: "lobby",
+        sentAt: "2026-03-07T22:00:05.000Z",
+        isSelf: true
+      }
+    ],
+    audio: {
+      inputDeviceId: "default",
+      outputDeviceId: "default",
+      captureEnabled: true,
+      selfMuted: false,
+      inputGain: 100,
+      outputGain: 100
+    },
+    preferences: {
+      pushToTalk: false,
+      pushToTalkShortcut: "Space",
+      shortcutBindings: [],
+      localNicknames: {},
+      autoReconnect: true,
+      notificationsEnabled: true,
+      showLatencyDetails: false
+    },
+    telemetry: {
+      latencyMs: null,
+      jitterMs: null,
+      packetLoss: null
+    },
+    recentServers: []
+  }, {
+    channels: [
+      { id: "lobby", name: "Lobby", parentId: null }
+    ],
+    participants: [
+      { id: "self", name: "Scout", channelId: "lobby", status: "live", isSelf: true },
+      { id: "atlas", name: "Atlas", channelId: "lobby", status: "live" }
+    ],
+    messages: [
+      {
+        id: "welcome",
+        author: "Server",
+        body: "Welcome aboard",
+        channelId: null,
+        sentAt: "2026-03-07T22:00:00.000Z"
+      },
+      {
+        id: "atlas-dm",
+        author: "Atlas",
+        body: "Send me a direct reply.",
+        channelId: null,
+        participantId: "atlas",
+        sentAt: "2026-03-07T22:00:10.000Z"
+      }
+    ]
+  });
+
+  assert.deepEqual(nextState.messages.map((message) => message.id), [
+    "welcome",
+    "local",
+    "atlas-dm"
+  ]);
+  assert.equal(nextState.messages[1]?.body, "Ready to roll.");
+  assert.equal(nextState.messages[2]?.participantId, "atlas");
 });
