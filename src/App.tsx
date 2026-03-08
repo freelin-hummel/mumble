@@ -324,7 +324,7 @@ export function App() {
     if (window.app?.rememberServer) {
       const nextState = await window.app.rememberServer(normalizedServerAddress);
       setAppState(nextState);
-      setServerAddress(nextState.connection.serverAddress || normalizedServerAddress);
+      setServerAddress(nextState.connection.serverAddress);
       return;
     }
 
@@ -1052,6 +1052,7 @@ export function App() {
     persistDspSettings(settings);
     setDspPipelineState(createDspPipeline(settings));
   };
+  const trimmedServerAddress = serverAddress.trim();
 
   return (
     <Theme accentColor="cyan" grayColor="slate" radius="large" scaling="105%">
@@ -1121,7 +1122,7 @@ export function App() {
                           onClick={() => {
                             void rememberServer(serverAddress);
                           }}
-                          disabled={appState.connection.status === "connecting" || serverAddress.trim().length === 0}
+                          disabled={appState.connection.status === "connecting" || trimmedServerAddress.length === 0}
                         >
                           Save server
                         </Button>
@@ -1146,7 +1147,7 @@ export function App() {
                             <Button
                               key={recentServer}
                               size="1"
-                              variant={serverAddress.trim() === recentServer ? "solid" : "soft"}
+                              variant={trimmedServerAddress === recentServer ? "solid" : "soft"}
                               type="button"
                               onClick={() => {
                                 loadRecentServer(recentServer);
