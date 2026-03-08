@@ -54,10 +54,10 @@ export const legacyParityGroups = [
   {
     group: "Administration",
     summary:
-      "The renderer can surface connection errors inline, but none of the moderation, ACL, ban, or focused recovery dialogs from the legacy client are implemented yet.",
-    partiallyCoveredLegacyScreenIds: [],
-    missingLegacyScreenIds: ["acl-editor", "ban-editor", "ban-dialog", "failed-connection-dialog"],
-    evidence: ["src/App.tsx:978-987"]
+      "The renderer now offers a focused failed-connection recovery panel with retry and diagnostics shortcuts, but the broader moderation, ACL, and ban-management flows from the legacy client are still missing.",
+    partiallyCoveredLegacyScreenIds: ["failed-connection-dialog"],
+    missingLegacyScreenIds: ["acl-editor", "ban-editor", "ban-dialog"],
+    evidence: ["src/App.tsx:1003-1046", "src/App.tsx:1456-1508"]
   },
   {
     group: "Plugins",
