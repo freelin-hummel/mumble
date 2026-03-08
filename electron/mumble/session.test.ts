@@ -276,6 +276,11 @@ test("MumbleControlSession exchanges auth and applies bootstrap control messages
         name: "Guest",
         channelId: "0",
         status: "idle",
+        isMuted: undefined,
+        isDeafened: undefined,
+        isSelfMuted: undefined,
+        isSelfDeafened: undefined,
+        isSuppressed: undefined,
         isSelf: undefined
       },
       {
@@ -283,6 +288,11 @@ test("MumbleControlSession exchanges auth and applies bootstrap control messages
         name: "Scout",
         channelId: "1",
         status: "idle",
+        isMuted: undefined,
+        isDeafened: undefined,
+        isSelfMuted: undefined,
+        isSelfDeafened: undefined,
+        isSuppressed: undefined,
         isSelf: true
       }
     ]);

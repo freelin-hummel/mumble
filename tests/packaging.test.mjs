@@ -31,3 +31,14 @@ test("electron-builder config packages the built renderer and Electron entrypoin
   assert.deepEqual(config.win.target, ["nsis"]);
   assert.deepEqual(config.linux.target, ["AppImage", "deb"]);
 });
+
+test("electron-vite config keeps the packaged build output in the expected dist layout", async () => {
+  const configSource = await readFile(path.join(repoRoot, "electron.vite.config.ts"), "utf8");
+
+  assert.match(configSource, /main:\s*\{[\s\S]*outDir:\s*"dist\/main"/);
+  assert.match(configSource, /input:\s*\{[\s\S]*main:\s*resolve\(__dirname,\s*"electron\/main\.ts"\)/);
+  assert.match(configSource, /preload:\s*\{[\s\S]*outDir:\s*"dist\/preload"/);
+  assert.match(configSource, /input:\s*\{[\s\S]*preload:\s*resolve\(__dirname,\s*"electron\/preload\.ts"\)/);
+  assert.match(configSource, /renderer:\s*\{[\s\S]*outDir:\s*"dist\/renderer"/);
+  assert.match(configSource, /input:\s*\{[\s\S]*index:\s*resolve\(__dirname,\s*"index\.html"\)/);
+});
