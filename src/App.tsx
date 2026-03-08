@@ -59,6 +59,13 @@ import {
   shortcutFromKeyboardEvent,
   stepVoiceActivation
 } from "./voiceActivation";
+import {
+  describeQuickActionLatency,
+  describeTalkMode,
+  describeTransportStatus,
+  findNextNavigableChannel,
+  formatTransportActivity
+} from "./sessionQuickActions";
 import { createTestServerSessions } from "./testServerSession.js";
 
 const fallbackAppState: AppClientState = {
@@ -256,6 +263,7 @@ export function App() {
   const [voiceActivation, setVoiceActivation] = useState(() => createInitialVoiceActivationState());
   const [meteringError, setMeteringError] = useState<string | null>(null);
   const [pushToTalkPressed, setPushToTalkPressed] = useState(false);
+  const [voiceTransportStatus, setVoiceTransportStatus] = useState<VoiceTransportStatus | null>(null);
   const [selectedParticipantId, setSelectedParticipantId] = useState<string | null>(null);
   const [participantNicknameDraft, setParticipantNicknameDraft] = useState("");
   const outputPreviewRef = useRef<HTMLAudioElement>(null);
@@ -709,6 +717,39 @@ export function App() {
     };
   }, [syncFormState]);
 
+  useEffect(() => {
+    let active = true;
+
+    const loadVoiceTransportStatus = async () => {
+      if (!window.voice?.getStatus) {
+        return;
+      }
+
+      try {
+        const nextStatus = await window.voice.getStatus();
+        if (active) {
+          setVoiceTransportStatus(nextStatus);
+        }
+      } catch {
+        if (active) {
+          setVoiceTransportStatus(null);
+        }
+      }
+    };
+
+    void loadVoiceTransportStatus();
+    const unsubscribe = window.voice?.onStatus?.((nextStatus) => {
+      if (active) {
+        setVoiceTransportStatus(nextStatus);
+      }
+    });
+
+    return () => {
+      active = false;
+      unsubscribe?.();
+    };
+  }, []);
+
   useEffect(() => () => {
     clearFallbackLiveSessionTimers();
   }, [clearFallbackLiveSessionTimers]);
@@ -784,6 +825,23 @@ export function App() {
   const pushToTalkShortcutLabel = useMemo(
     () => formatPushToTalkShortcut(appState.preferences.pushToTalkShortcut),
     [appState.preferences.pushToTalkShortcut]
+  );
+  const quickActionTalkModeLabel = useMemo(
+    () => describeTalkMode({
+      pushToTalk: appState.preferences.pushToTalk,
+      pushToTalkPressed,
+      shortcutLabel: pushToTalkShortcutLabel,
+      voiceActivation
+    }),
+    [appState.preferences.pushToTalk, pushToTalkPressed, pushToTalkShortcutLabel, voiceActivation]
+  );
+  const latencyQuickActionLabel = useMemo(
+    () => describeQuickActionLatency(appState.telemetry, voiceTransportStatus),
+    [appState.telemetry, voiceTransportStatus]
+  );
+  const nextNavigableChannel = useMemo(
+    () => findNextNavigableChannel(appState.channels, appState.activeChannelId),
+    [appState.activeChannelId, appState.channels]
   );
   const localNicknames = appState.preferences.localNicknames;
   const shortcutBindings = appState.preferences.shortcutBindings;
@@ -917,15 +975,11 @@ export function App() {
   };
 
   const cycleChannel = async () => {
-    if (appState.channels.length === 0) {
+    if (!nextNavigableChannel) {
       return;
     }
 
-    const currentIndex = appState.channels.findIndex((channel) => channel.id === appState.activeChannelId);
-    const nextChannel = appState.channels[(currentIndex + 1) % appState.channels.length];
-    if (nextChannel) {
-      await selectChannel(nextChannel.id);
-    }
+    await selectChannel(nextNavigableChannel.id);
   };
 
   const updateShortcutBindings = useCallback((nextShortcutBindings: AppClientShortcutBinding[]) => {
@@ -988,6 +1042,7 @@ export function App() {
   }, [
     appState.audio.selfMuted,
     appState.preferences.showLatencyDetails,
+    appState.preferences.pushToTalk,
     cycleChannel,
     updateAudioSettings,
     updatePreferences
@@ -1807,11 +1862,22 @@ export function App() {
                     <Grid columns={{ initial: "1", sm: "2" }} gap="3">
                       <QuickAction
                         title="Mute"
-                        description={appState.audio.selfMuted ? "Unmute microphone" : "Mute microphone"}
+                        description={appState.audio.selfMuted ? "Unmute microphone" : quickActionTalkModeLabel}
                         icon={<SpeakerOffIcon />}
                         active={appState.audio.selfMuted}
                         onClick={() => {
                           void updateAudioSettings({ selfMuted: !appState.audio.selfMuted });
+                        }}
+                      />
+                      <QuickAction
+                        title="Push to talk"
+                        description={appState.preferences.pushToTalk
+                          ? `Switch to voice activation · ${pushToTalkShortcutLabel}`
+                          : "Require a hold-to-speak workflow"}
+                        icon={<PersonIcon />}
+                        active={appState.preferences.pushToTalk}
+                        onClick={() => {
+                          void updatePreferences({ pushToTalk: !appState.preferences.pushToTalk });
                         }}
                       />
                       <QuickAction
@@ -1825,7 +1891,9 @@ export function App() {
                       />
                       <QuickAction
                         title="Latency"
-                        description={appState.preferences.showLatencyDetails ? "Hide diagnostics" : "Show diagnostics"}
+                        description={appState.preferences.showLatencyDetails
+                          ? "Hide diagnostics"
+                          : latencyQuickActionLabel}
                         icon={<LightningBoltIcon />}
                         active={appState.preferences.showLatencyDetails}
                         onClick={() => {
@@ -1834,8 +1902,13 @@ export function App() {
                       />
                       <QuickAction
                         title="Rooms"
-                        description={activeChannel ? `Switch from ${activeChannel.name}` : "Cycle the active room"}
+                        description={nextNavigableChannel
+                          ? `Move to ${nextNavigableChannel.name}`
+                          : activeChannel
+                            ? `Stay in ${activeChannel.name}`
+                            : "Connect to browse rooms"}
                         icon={<ChatBubbleIcon />}
+                        disabled={!nextNavigableChannel}
                         onClick={() => {
                           void cycleChannel();
                         }}
@@ -1847,6 +1920,19 @@ export function App() {
                           <Text size="2">Latency: {appState.telemetry.latencyMs ?? "—"} ms</Text>
                           <Text size="2">Jitter: {appState.telemetry.jitterMs ?? "—"} ms</Text>
                           <Text size="2">Packet loss: {appState.telemetry.packetLoss ?? "—"}%</Text>
+                          <Text size="2">Voice transport: {describeTransportStatus(voiceTransportStatus)}</Text>
+                          {voiceTransportStatus?.remoteAddress && voiceTransportStatus.remotePort ? (
+                            <Text size="2">
+                              Remote endpoint: {voiceTransportStatus.remoteAddress}:{voiceTransportStatus.remotePort}
+                            </Text>
+                          ) : null}
+                          <Text size="2">{formatTransportActivity(voiceTransportStatus)}</Text>
+                          {voiceTransportStatus?.lastError ? (
+                            <Text size="2" color="ruby">Transport error: {voiceTransportStatus.lastError}</Text>
+                          ) : null}
+                          {connectionError ? (
+                            <Text size="2" color="ruby">Session issue: {connectionError}</Text>
+                          ) : null}
                           <Flex gap="3" wrap="wrap" align="center">
                             <Button
                               variant="soft"
