@@ -28,6 +28,17 @@ declare global {
     id: string;
     name: string;
     parentId: string | null;
+    depth: number;
+    position: number;
+    permissions: {
+      traverse: boolean;
+      enter: boolean;
+      speak: boolean;
+      muteDeafen: boolean;
+      move: boolean;
+      write: boolean;
+    };
+    participantIds: string[];
   }
 
   interface AppClientParticipant {
@@ -35,6 +46,15 @@ declare global {
     name: string;
     channelId: string;
     status: "live" | "muted" | "idle";
+    isSelf?: boolean;
+  }
+
+  interface AppClientChatMessage {
+    id: string;
+    author: string;
+    body: string;
+    channelId: string | null;
+    sentAt: string;
     isSelf?: boolean;
   }
 
@@ -73,10 +93,29 @@ declare global {
     channels: AppClientChannel[];
     activeChannelId: string | null;
     participants: AppClientParticipant[];
+    messages: AppClientChatMessage[];
     audio: AppClientAudioSettings;
     preferences: AppClientPreferences;
     telemetry: AppClientTelemetry;
     recentServers: string[];
+  }
+
+  interface RendererDiagnosticsSnapshot {
+    audioRuntime?: {
+      inputLevel: number;
+      outputLevel: number;
+      mode: string;
+      isTransmitting: boolean;
+      meteringError: string | null;
+      availableInputDevices: number;
+      availableOutputDevices: number;
+      outputRoutingReady: boolean;
+    };
+  }
+
+  interface DiagnosticsExportResult {
+    canceled: boolean;
+    filePath: string | null;
   }
 
   interface Window {
@@ -88,8 +127,10 @@ declare global {
       connect?: (options: { serverAddress: string; nickname: string }) => Promise<AppClientState>;
       disconnect?: () => Promise<AppClientState>;
       selectChannel?: (channelId: string) => Promise<AppClientState>;
+      sendChatMessage?: (body: string) => Promise<AppClientState>;
       updateAudioSettings?: (audio: Partial<AppClientAudioSettings>) => Promise<AppClientState>;
       updatePreferences?: (preferences: Partial<AppClientPreferences>) => Promise<AppClientState>;
+      exportDiagnostics?: (snapshot?: RendererDiagnosticsSnapshot) => Promise<DiagnosticsExportResult>;
       onStateChanged?: (listener: (state: AppClientState) => void) => () => void;
     };
     voice?: {
