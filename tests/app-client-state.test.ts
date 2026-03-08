@@ -79,6 +79,31 @@ test("AppClientStore connect preserves an empty live session until real data arr
   assert.equal(persistedStates.length >= 2, true);
 });
 
+test("AppClientStore surfaces authentication progress before hydrating the live session", async () => {
+  const store = new AppClientStore({
+    waitForConnection: async (_request, controls) => {
+      assert.equal(store.getState().connection.status, "connecting");
+      controls.setAuthenticating();
+      assert.equal(store.getState().connection.status, "authenticating");
+      return {
+        channels: [{ id: "1", name: "Root" }],
+        participants: [{ id: "7", name: "Scout", channelId: "1", isSelf: true }],
+        activeChannelId: "1"
+      };
+    }
+  });
+
+  const state = await store.connect({
+    serverAddress: "voice.example.test:64738",
+    nickname: "Scout"
+  });
+
+  assert.equal(state.connection.status, "connected");
+  assert.equal(state.activeChannelId, "1");
+  assert.deepEqual(state.channels.map((channel) => channel.id), ["1"]);
+  assert.deepEqual(state.participants.map((participant) => participant.id), ["7"]);
+});
+
 test("AppClientStore can remember a server draft without connecting", () => {
   const store = new AppClientStore({
     waitForConnection: async () => {}

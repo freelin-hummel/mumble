@@ -18,15 +18,15 @@ import {
   getDiagnosticsLogStore,
   type RendererDiagnosticsSnapshot
 } from "./diagnostics.js";
+import { MumbleSessionManager } from "./mumble/index.js";
 import { getVoiceTransportStatus } from "./voiceTransportIpc.js";
-import { createTestServerSessions } from "../src/testServerSession.js";
 
 const APP_STATE_CHANNEL = "app:state-changed";
 const APP_STATE_FILE_NAME = "desktop-client-state.json";
 const diagnosticsLogStore = getDiagnosticsLogStore();
 
 let store: AppClientStore | null = null;
-let liveSessionTimerIds: NodeJS.Timeout[] = [];
+let sessionManager: MumbleSessionManager | null = null;
 
 const broadcastState = (state: AppClientState) => {
   for (const window of BrowserWindow.getAllWindows()) {
@@ -73,7 +73,8 @@ const getStore = () => {
       onPersist: savePersistedState,
       onLog: (event) => {
         diagnosticsLogStore.log(event.level, event.event, event.context);
-      }
+      },
+      waitForConnection: (request, controls) => getSessionManager().connect(request, controls)
     });
     store.subscribe((state) => {
       broadcastState(state);
@@ -83,19 +84,25 @@ const getStore = () => {
   return store;
 };
 
-const clearLiveSessionTimers = () => {
-  liveSessionTimerIds.forEach((timerId) => {
-    clearTimeout(timerId);
-  });
-  liveSessionTimerIds = [];
-};
+const getSessionManager = () => {
+  if (!sessionManager) {
+    sessionManager = new MumbleSessionManager({
+      onDisconnected: (reason) => {
+        if (!store) {
+          return;
+        }
 
-const startTestServerSession = (nickname: string) => {
-  clearLiveSessionTimers();
-  const liveSessions = createTestServerSessions(nickname);
-  liveSessionTimerIds = liveSessions.map(({ delayMs, session }) => setTimeout(() => {
-    getStore().syncLiveSession(session);
-  }, delayMs));
+        if (reason) {
+          store.failConnection(reason);
+          return;
+        }
+
+        store.disconnect();
+      }
+    });
+  }
+
+  return sessionManager;
 };
 
 export const registerAppStateIpc = () => {
@@ -110,14 +117,10 @@ export const registerAppStateIpc = () => {
   ipcMain.removeHandler("app:export-diagnostics");
 
   ipcMain.handle("app:get-state", () => getStore().getState());
-  ipcMain.handle("app:connect", async (_event, request: AppClientConnectRequest) => {
-    const nextState = await getStore().connect(request);
-    startTestServerSession(nextState.connection.nickname);
-    return getStore().getState();
-  });
+  ipcMain.handle("app:connect", async (_event, request: AppClientConnectRequest) => getStore().connect(request));
   ipcMain.handle("app:remember-server", (_event, serverAddress: string) => getStore().rememberServer(serverAddress));
-  ipcMain.handle("app:disconnect", () => {
-    clearLiveSessionTimers();
+  ipcMain.handle("app:disconnect", async () => {
+    await getSessionManager().disconnect();
     return getStore().disconnect();
   });
   ipcMain.handle("app:select-channel", (_event, channelId: string) => getStore().selectChannel(channelId));
