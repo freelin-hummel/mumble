@@ -161,6 +161,24 @@ const getParticipantDisplayName = (
   localNicknames: AppClientPreferences["localNicknames"]
 ) => localNicknames[participant.id] ?? participant.name;
 
+const withParticipantLocalNickname = (
+  localNicknames: AppClientPreferences["localNicknames"],
+  participantId: string,
+  nickname: string
+) => {
+  const normalizedNickname = nickname.trim();
+  if (normalizedNickname.length === 0) {
+    return Object.fromEntries(Object.entries(localNicknames).filter(([storedParticipantId]) => (
+      storedParticipantId !== participantId
+    )));
+  }
+
+  return {
+    ...localNicknames,
+    [participantId]: normalizedNickname
+  };
+};
+
 const createFallbackConnectedState = (
   currentState: AppClientState,
   serverAddress: string,
@@ -1091,15 +1109,13 @@ export function App() {
       return;
     }
 
-    const normalizedNickname = participantNicknameDraft.trim();
-    const nextLocalNicknames = { ...localNicknames };
-    if (normalizedNickname.length === 0) {
-      delete nextLocalNicknames[selectedParticipant.id];
-    } else {
-      nextLocalNicknames[selectedParticipant.id] = normalizedNickname;
-    }
-
-    await updatePreferences({ localNicknames: nextLocalNicknames });
+    await updatePreferences({
+      localNicknames: withParticipantLocalNickname(
+        localNicknames,
+        selectedParticipant.id,
+        participantNicknameDraft
+      )
+    });
   }, [localNicknames, participantNicknameDraft, selectedParticipant, updatePreferences]);
 
   const applyPreset = (settings: typeof audioPresets[number]["settings"]) => {
@@ -1632,9 +1648,11 @@ export function App() {
                             onClick={() => {
                               setParticipantNicknameDraft("");
                               void updatePreferences({
-                                localNicknames: Object.fromEntries(Object.entries(localNicknames).filter(([participantId]) => (
-                                  participantId !== selectedParticipant.id
-                                )))
+                                localNicknames: withParticipantLocalNickname(
+                                  localNicknames,
+                                  selectedParticipant.id,
+                                  ""
+                                )
                               });
                             }}
                             disabled={!localNicknames[selectedParticipant.id]}
