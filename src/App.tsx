@@ -84,6 +84,7 @@ const fallbackAppState: AppClientState = {
     pushToTalk: false,
     pushToTalkShortcut: DEFAULT_PUSH_TO_TALK_SHORTCUT,
     shortcutBindings: [],
+    localNicknames: {},
     autoReconnect: true,
     notificationsEnabled: true,
     showLatencyDetails: false
@@ -154,6 +155,11 @@ const formatChatTimestamp = (value: string) => {
     minute: "2-digit"
   });
 };
+
+const getParticipantDisplayName = (
+  participant: AppClientParticipant,
+  localNicknames: AppClientPreferences["localNicknames"]
+) => localNicknames[participant.id] ?? participant.name;
 
 const createFallbackConnectedState = (
   currentState: AppClientState,
@@ -232,6 +238,8 @@ export function App() {
   const [voiceActivation, setVoiceActivation] = useState(() => createInitialVoiceActivationState());
   const [meteringError, setMeteringError] = useState<string | null>(null);
   const [pushToTalkPressed, setPushToTalkPressed] = useState(false);
+  const [selectedParticipantId, setSelectedParticipantId] = useState<string | null>(null);
+  const [participantNicknameDraft, setParticipantNicknameDraft] = useState("");
   const outputPreviewRef = useRef<HTMLAudioElement>(null);
   const diagnosticsSectionRef = useRef<HTMLDivElement>(null);
   const fallbackLiveSessionTimersRef = useRef<number[]>([]);
@@ -736,6 +744,16 @@ export function App() {
     )),
     [appState.activeChannelId, appState.messages]
   );
+  const selectedParticipant = useMemo(
+    () => appState.participants.find((participant) => participant.id === selectedParticipantId) ?? null,
+    [appState.participants, selectedParticipantId]
+  );
+  const selectedParticipantChannel = useMemo(
+    () => selectedParticipant
+      ? appState.channels.find((channel) => channel.id === selectedParticipant.channelId) ?? null
+      : null,
+    [appState.channels, selectedParticipant]
+  );
   const connectionError = formError ?? appState.connection.error;
   const connectionServerAddress = serverAddress.trim() || appState.connection.serverAddress;
   const connectionNickname = nickname.trim() || appState.connection.nickname;
@@ -749,6 +767,7 @@ export function App() {
     () => formatPushToTalkShortcut(appState.preferences.pushToTalkShortcut),
     [appState.preferences.pushToTalkShortcut]
   );
+  const localNicknames = appState.preferences.localNicknames;
   const shortcutBindings = appState.preferences.shortcutBindings;
   const connectionRecovery = useMemo(() => {
     if (!connectionError) {
@@ -764,6 +783,25 @@ export function App() {
   useEffect(() => {
     setDismissedConnectionErrorKey(null);
   }, [connectionErrorKey]);
+
+  useEffect(() => {
+    if (!selectedParticipantId) {
+      return;
+    }
+
+    if (!selectedParticipant) {
+      setSelectedParticipantId(null);
+    }
+  }, [selectedParticipant, selectedParticipantId]);
+
+  useEffect(() => {
+    if (!selectedParticipant) {
+      setParticipantNicknameDraft("");
+      return;
+    }
+
+    setParticipantNicknameDraft(localNicknames[selectedParticipant.id] ?? "");
+  }, [localNicknames, selectedParticipant]);
 
   const connectToServer = async () => {
     const normalizedServerAddress = serverAddress.trim();
@@ -1047,6 +1085,22 @@ export function App() {
       setFormError(error instanceof Error ? error.message : "Unable to send chat.");
     }
   };
+
+  const saveLocalNickname = useCallback(async () => {
+    if (!selectedParticipant) {
+      return;
+    }
+
+    const normalizedNickname = participantNicknameDraft.trim();
+    const nextLocalNicknames = { ...localNicknames };
+    if (normalizedNickname.length === 0) {
+      delete nextLocalNicknames[selectedParticipant.id];
+    } else {
+      nextLocalNicknames[selectedParticipant.id] = normalizedNickname;
+    }
+
+    await updatePreferences({ localNicknames: nextLocalNicknames });
+  }, [localNicknames, participantNicknameDraft, selectedParticipant, updatePreferences]);
 
   const applyPreset = (settings: typeof audioPresets[number]["settings"]) => {
     persistDspSettings(settings);
@@ -1473,27 +1527,43 @@ export function App() {
                   {activeParticipants.length > 0 ? (
                     <Flex direction="column" gap="3">
                       {activeParticipants.map((participant) => (
-                        <Flex key={participant.id} align="center" justify="between">
-                          <Flex align="center" gap="3">
-                            <Box
-                              style={{
-                                width: 38,
-                                height: 38,
-                                borderRadius: 12,
-                                background: "rgba(255,255,255,0.08)",
-                                display: "grid",
-                                placeItems: "center"
-                              }}
-                            >
-                              <PersonIcon />
-                            </Box>
-                            <Box>
-                              <Text size="3">{participant.name}</Text>
-                              {participant.isSelf ? <Text size="1" color="gray">You</Text> : null}
-                            </Box>
+                        <Button
+                          key={participant.id}
+                          type="button"
+                          variant={selectedParticipantId === participant.id ? "soft" : "ghost"}
+                          onClick={() => {
+                            setSelectedParticipantId(participant.id);
+                            setFormError(null);
+                          }}
+                          style={{ justifyContent: "space-between", width: "100%", height: "auto", padding: 0 }}
+                        >
+                          <Flex align="center" justify="between" style={{ width: "100%", padding: "6px 0" }}>
+                            <Flex align="center" gap="3">
+                              <Box
+                                style={{
+                                  width: 38,
+                                  height: 38,
+                                  borderRadius: 12,
+                                  background: "rgba(255,255,255,0.08)",
+                                  display: "grid",
+                                  placeItems: "center"
+                                }}
+                              >
+                                <PersonIcon />
+                              </Box>
+                              <Box>
+                                <Text size="3">{getParticipantDisplayName(participant, localNicknames)}</Text>
+                                <Flex align="center" gap="2" wrap="wrap">
+                                  {localNicknames[participant.id] ? (
+                                    <Text size="1" color="gray">Server name: {participant.name}</Text>
+                                  ) : null}
+                                  {participant.isSelf ? <Text size="1" color="gray">You</Text> : null}
+                                </Flex>
+                              </Box>
+                            </Flex>
+                            <StatusChip status={participant.status} label={participant.status} />
                           </Flex>
-                          <StatusChip status={participant.status} label={participant.status} />
-                        </Flex>
+                        </Button>
                       ))}
                     </Flex>
                   ) : (
@@ -1503,6 +1573,87 @@ export function App() {
                         : "Disconnected. Participant presence appears here once the session is live."}
                     </Text>
                   )}
+                  {selectedParticipant ? (
+                    <Card className="section-card">
+                      <Flex direction="column" gap="3">
+                        <SectionHeader
+                          title="Participant details"
+                          subtitle={selectedParticipantChannel
+                            ? `Currently in ${selectedParticipantChannel.name}`
+                            : "User profile and local nickname"}
+                        />
+                        <Grid columns={{ initial: "1", sm: "2" }} gap="3">
+                          <Box>
+                            <Text size="1" color="gray">Display name</Text>
+                            <Text size="3">{getParticipantDisplayName(selectedParticipant, localNicknames)}</Text>
+                          </Box>
+                          <Box>
+                            <Text size="1" color="gray">Status</Text>
+                            <Flex style={{ marginTop: 4 }}>
+                              <StatusChip status={selectedParticipant.status} label={selectedParticipant.status} />
+                            </Flex>
+                          </Box>
+                          <Box>
+                            <Text size="1" color="gray">Server name</Text>
+                            <Text size="3">{selectedParticipant.name}</Text>
+                          </Box>
+                          <Box>
+                            <Text size="1" color="gray">Participant ID</Text>
+                            <Text size="2" style={{ wordBreak: "break-all" }}>{selectedParticipant.id}</Text>
+                          </Box>
+                        </Grid>
+                        <Box>
+                          <Text size="1" color="gray">Local nickname</Text>
+                          <TextField.Root
+                            value={participantNicknameDraft}
+                            placeholder="Add a local alias for this user"
+                            onChange={(event) => {
+                              setParticipantNicknameDraft(event.target.value);
+                            }}
+                            style={{ marginTop: 8 }}
+                          >
+                            <TextField.Slot>
+                              <PersonIcon />
+                            </TextField.Slot>
+                          </TextField.Root>
+                        </Box>
+                        <Flex gap="3" wrap="wrap">
+                          <Button
+                            type="button"
+                            onClick={() => {
+                              void saveLocalNickname();
+                            }}
+                          >
+                            Save nickname
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="soft"
+                            onClick={() => {
+                              setParticipantNicknameDraft("");
+                              void updatePreferences({
+                                localNicknames: Object.fromEntries(Object.entries(localNicknames).filter(([participantId]) => (
+                                  participantId !== selectedParticipant.id
+                                )))
+                              });
+                            }}
+                            disabled={!localNicknames[selectedParticipant.id]}
+                          >
+                            Clear nickname
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            onClick={() => {
+                              setSelectedParticipantId(null);
+                            }}
+                          >
+                            Close
+                          </Button>
+                        </Flex>
+                      </Flex>
+                    </Card>
+                  ) : null}
                 </Flex>
               </Card>
 

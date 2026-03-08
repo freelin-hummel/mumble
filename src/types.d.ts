@@ -76,6 +76,7 @@ declare global {
     pushToTalk: boolean;
     pushToTalkShortcut: string;
     shortcutBindings: AppClientShortcutBinding[];
+    localNicknames: Record<string, string>;
     autoReconnect: boolean;
     notificationsEnabled: boolean;
     showLatencyDetails: boolean;

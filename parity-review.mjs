@@ -4,21 +4,27 @@ export const legacyParityGroups = [
   {
     group: "Core workspace",
     summary:
-      "The Electron renderer covers the main voice workspace, a lightweight direct-connect flow with saved-server editing, and basic room chat, but it still lacks the broader server browser, metadata, identity, token, search, and developer-tooling flows from the legacy client.",
-    partiallyCoveredLegacyScreenIds: ["main-window", "connect-dialog", "connect-dialog-edit", "text-message"],
+      "The Electron renderer covers the main voice workspace, a lightweight direct-connect flow with saved-server editing, basic room chat, and a lightweight participant details/local nickname flow, but it still lacks the broader server browser, server metadata, registration editing, token, search, and developer-tooling surfaces from the legacy client.",
+    partiallyCoveredLegacyScreenIds: [
+      "main-window",
+      "connect-dialog",
+      "connect-dialog-edit",
+      "text-message",
+      "user-information",
+      "user-local-nickname"
+    ],
     missingLegacyScreenIds: [
       "server-information",
       "search-dialog",
-      "user-information",
       "user-edit",
-      "user-local-nickname",
       "tokens",
       "developer-console"
     ],
     evidence: [
-      "src/App.tsx:783-828",
-      "src/App.tsx:1044-1132",
-      "tests/app-client-state.test.ts:78-91"
+      "src/App.tsx:776-836",
+      "src/App.tsx:1074-1241",
+      "src/App.tsx:1521-1633",
+      "tests/app-client-state.test.ts:10-272"
     ]
   },
   {
