@@ -234,9 +234,7 @@ const compareText = (left: string, right: string) => left.localeCompare(right, u
 const isParticipantStatus = (value: string): value is AppClientParticipantStatus => (
   value === "live" || value === "muted" || value === "idle"
 );
-const normalizeParticipantFlag = (value: boolean | null | undefined) => (
-  value === true ? true : undefined
-);
+const normalizeParticipantFlag = (value: boolean | null | undefined) => value || undefined;
 const normalizeParticipantState = (
   participant: Pick<
     AppClientParticipantSnapshot,

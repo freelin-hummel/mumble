@@ -954,7 +954,7 @@ export function App() {
 
     updateLocalAppState((currentState) => ({
       ...currentState,
-      activeChannelId: currentState.channels.find((channel) => (
+      activeChannelId: currentState.channels.some((channel) => (
         channel.id === channelId && channel.permissions.enter
       ))
         ? channelId

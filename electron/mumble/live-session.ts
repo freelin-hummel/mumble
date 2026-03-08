@@ -275,7 +275,10 @@ const decodeUserStateMessage = (payload: Uint8Array): DecodedUserStateMessage =>
     } else if (field.fieldNumber === 3 && field.wireType === 2 && field.value instanceof Uint8Array) {
       nextMessage.name = decodeString(field.value);
     } else if (field.fieldNumber === 5 && field.wireType === 0 && typeof field.value === "bigint") {
-      nextMessage.channelId = normalizeMessageId(field.value) ?? undefined;
+      const channelId = normalizeMessageId(field.value);
+      if (channelId) {
+        nextMessage.channelId = channelId;
+      }
     } else if (field.fieldNumber === 6 && field.wireType === 0 && typeof field.value === "bigint") {
       nextMessage.isMuted = decodeBool(field.value);
     } else if (field.fieldNumber === 7 && field.wireType === 0 && typeof field.value === "bigint") {
