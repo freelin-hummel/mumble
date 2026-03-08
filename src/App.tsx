@@ -784,7 +784,10 @@ export function App() {
                   audioBitsPerSecond: 64_000
                 })
               : new MediaRecorder(mediaStream);
-            voiceCaptureMimeTypeRef.current = mediaRecorder.mimeType || preferredMimeType || "audio/webm";
+            voiceCaptureMimeTypeRef.current = mediaRecorder.mimeType || preferredMimeType || null;
+            if (!voiceCaptureMimeTypeRef.current) {
+              setVoicePlaybackError("Voice playback format is unavailable in this runtime.");
+            }
             mediaRecorder.addEventListener("dataavailable", (event) => {
               if (cancelled || event.data.size === 0 || !voiceActivationRef.current.isTransmitting || !window.voice?.send) {
                 return;
