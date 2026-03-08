@@ -18,8 +18,8 @@ const createChannelList = (): AppClientChannelSnapshot[] => [
 
 const createBaseParticipants = (nickname: string): AppClientParticipantSnapshot[] => [
   { id: "self", name: nickname, channelId: "lobby", status: "live", isSelf: true },
-  { id: "atlas", name: "Atlas", channelId: "lobby", status: "live" },
-  { id: "echo", name: "Echo", channelId: "squad", status: "idle" }
+  { id: "atlas", name: "Atlas", channelId: "lobby", status: "live", isSelfMuted: true },
+  { id: "echo", name: "Echo", channelId: "squad", status: "idle", isDeafened: true }
 ];
 
 const createBaseMessages = (nickname: string): AppClientChatMessage[] => [
@@ -66,7 +66,7 @@ export const createTestServerSessions = (nickname: string): ScheduledLiveSession
         activeChannelId: "lobby",
         participants: [
           ...initialParticipants,
-          { id: "nova", name: "Nova", channelId: "lobby", status: "live" }
+          { id: "nova", name: "Nova", channelId: "lobby", status: "live", isSuppressed: true }
         ],
         messages: [
           ...initialMessages,
@@ -92,9 +92,9 @@ export const createTestServerSessions = (nickname: string): ScheduledLiveSession
         activeChannelId: "lobby",
         participants: [
           { id: "self", name: nickname, channelId: "lobby", status: "live", isSelf: true },
-          { id: "atlas", name: "Atlas", channelId: "squad", status: "idle" },
-          { id: "echo", name: "Echo", channelId: "squad", status: "live" },
-          { id: "nova", name: "Nova", channelId: "lobby", status: "muted" }
+          { id: "atlas", name: "Atlas", channelId: "squad", status: "idle", isSelfMuted: true },
+          { id: "echo", name: "Echo", channelId: "squad", status: "live", isDeafened: true },
+          { id: "nova", name: "Nova", channelId: "lobby", status: "muted", isSuppressed: true }
         ],
         messages: [
           ...initialMessages,

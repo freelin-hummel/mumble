@@ -190,6 +190,38 @@ const withParticipantLocalNickname = (
     [participantId]: normalizedNickname
   };
 };
+const getParticipantStatusLabel = (participant: AppClientParticipant) => {
+  switch (participant.status) {
+    case "live":
+      return "Speaking";
+    case "muted":
+      return "Muted";
+    case "idle":
+    default:
+      return "Idle";
+  }
+};
+const getParticipantStateLabels = (participant: AppClientParticipant) => {
+  const labels: string[] = [];
+  if (participant.isSelf) {
+    labels.push("You");
+  }
+  if (participant.isSelfDeafened) {
+    labels.push("Self deafened");
+  } else if (participant.isDeafened) {
+    labels.push("Deafened by server");
+  }
+  if (participant.isSelfMuted) {
+    labels.push("Self muted");
+  } else if (participant.isMuted) {
+    labels.push("Muted by server");
+  }
+  if (participant.isSuppressed) {
+    labels.push("Suppressed");
+  }
+
+  return labels;
+};
 
 const createFallbackConnectedState = (
   currentState: AppClientState,
@@ -798,6 +830,16 @@ export function App() {
     () => appState.channels.find((channel) => channel.id === appState.activeChannelId) ?? null,
     [appState.activeChannelId, appState.channels]
   );
+  const selfParticipant = useMemo(
+    () => appState.participants.find((participant) => participant.isSelf) ?? null,
+    [appState.participants]
+  );
+  const selfParticipantChannel = useMemo(
+    () => selfParticipant
+      ? appState.channels.find((channel) => channel.id === selfParticipant.channelId) ?? null
+      : null,
+    [appState.channels, selfParticipant]
+  );
   const activeParticipants = useMemo(
     () => appState.participants.filter((participant) => participant.channelId === appState.activeChannelId),
     [appState.activeChannelId, appState.participants]
@@ -975,8 +1017,53 @@ export function App() {
 
     updateLocalAppState((currentState) => ({
       ...currentState,
-      activeChannelId: channelId
+      activeChannelId: currentState.channels.some((channel) => (
+        channel.id === channelId && channel.permissions.enter
+      ))
+        ? channelId
+        : currentState.activeChannelId
     }));
+  };
+
+  const joinChannel = async (channelId: string) => {
+    if (window.app?.joinChannel) {
+      const nextState = await window.app.joinChannel(channelId);
+      setAppState(nextState);
+      return;
+    }
+
+    updateLocalAppState((currentState) => {
+      const nextChannel = currentState.channels.find((channel) => channel.id === channelId);
+      if (!nextChannel || !nextChannel.permissions.enter) {
+        return currentState;
+      }
+
+      const currentSelfParticipant = currentState.participants.find((participant) => participant.isSelf);
+      const nextParticipants = currentState.participants.map((participant) => (
+        currentSelfParticipant && participant.id === currentSelfParticipant.id
+          ? { ...participant, channelId }
+          : participant
+      ));
+      const participantIdsByChannel = new Map<string, string[]>();
+      for (const participant of nextParticipants) {
+        const participantIds = participantIdsByChannel.get(participant.channelId);
+        if (participantIds) {
+          participantIds.push(participant.id);
+        } else {
+          participantIdsByChannel.set(participant.channelId, [participant.id]);
+        }
+      }
+
+      return {
+        ...currentState,
+        activeChannelId: channelId,
+        participants: nextParticipants,
+        channels: currentState.channels.map((channel) => ({
+          ...channel,
+          participantIds: participantIdsByChannel.get(channel.id) ?? []
+        }))
+      };
+    });
   };
 
   const cycleChannel = async () => {
@@ -1550,7 +1637,7 @@ export function App() {
                   <SectionHeader
                     title="Channels"
                     subtitle={activeChannel
-                      ? `Active room: ${activeChannel.name}${!activeChannel.permissions.enter ? " · no entry" : ""}`
+                      ? `Selected room: ${activeChannel.name}${selfParticipantChannel ? ` · joined in ${selfParticipantChannel.name}` : ""}${!activeChannel.permissions.enter ? " · no entry" : ""}`
                       : "Join a server to browse rooms"}
                   />
                   {appState.channels.length > 0 ? (
@@ -1558,33 +1645,53 @@ export function App() {
                       {appState.channels.map((channel) => {
                         const participantCount = channel.participantIds.length;
                         const isActive = channel.id === appState.activeChannelId;
+                        const isJoined = channel.id === selfParticipant?.channelId;
                         return (
-                          <Button
+                          <Flex
                             key={channel.id}
-                            variant={isActive ? "solid" : "soft"}
-                            color={isActive ? "cyan" : undefined}
-                            style={{
-                              justifyContent: "space-between",
-                              paddingLeft: `${BASE_CHANNEL_PADDING + (channel.depth * CHANNEL_INDENT_PER_LEVEL)}px`
-                            }}
-                            onClick={() => {
-                              void selectChannel(channel.id);
-                            }}
-                            disabled={!channel.permissions.enter}
+                            gap="2"
+                            align="stretch"
                           >
-                            <Flex align="center" justify="between" width="100%" gap="3">
-                              <Flex align="center" gap="2">
-                                <span>{channel.name}</span>
-                                {!channel.permissions.enter ? (
-                                  <Text as="span" size="1" color="gray">Locked</Text>
-                                ) : null}
-                                {channel.permissions.enter && !channel.permissions.speak ? (
-                                  <Text as="span" size="1" color="gray">Listen only</Text>
-                                ) : null}
+                            <Button
+                              variant={isActive ? "solid" : "soft"}
+                              color={isActive ? "cyan" : undefined}
+                              style={{
+                                flex: 1,
+                                justifyContent: "space-between",
+                                paddingLeft: `${BASE_CHANNEL_PADDING + (channel.depth * CHANNEL_INDENT_PER_LEVEL)}px`
+                              }}
+                              onClick={() => {
+                                void selectChannel(channel.id);
+                              }}
+                              disabled={!channel.permissions.enter}
+                            >
+                              <Flex align="center" justify="between" width="100%" gap="3">
+                                <Flex align="center" gap="2" wrap="wrap">
+                                  <span>{channel.name}</span>
+                                  {!channel.permissions.enter ? (
+                                    <Text as="span" size="1" color="gray">Locked</Text>
+                                  ) : null}
+                                  {channel.permissions.enter && !channel.permissions.speak ? (
+                                    <Text as="span" size="1" color="gray">Listen only</Text>
+                                  ) : null}
+                                  {isJoined ? (
+                                    <Badge color="green" variant="soft">Joined</Badge>
+                                  ) : null}
+                                </Flex>
+                                <span>{participantCount}</span>
                               </Flex>
-                              <span>{participantCount}</span>
-                            </Flex>
-                          </Button>
+                            </Button>
+                            {channel.permissions.enter && !isJoined ? (
+                              <Button
+                                variant="soft"
+                                onClick={() => {
+                                  void joinChannel(channel.id);
+                                }}
+                              >
+                                Join
+                              </Button>
+                            ) : null}
+                          </Flex>
                         );
                       })}
                     </Flex>
@@ -1602,7 +1709,9 @@ export function App() {
                 <Flex direction="column" gap="4">
                   <SectionHeader
                     title="Participants"
-                    subtitle={activeChannel ? `${activeParticipants.length} in ${activeChannel.name}` : "Live session roster"}
+                    subtitle={activeChannel
+                      ? `${activeParticipants.length} in ${activeChannel.name}${selfParticipantChannel && selfParticipantChannel.id !== activeChannel.id ? ` · You are in ${selfParticipantChannel.name}` : ""}`
+                      : "Live session roster"}
                   />
                   {activeParticipants.length > 0 ? (
                     <Flex direction="column" gap="3">
@@ -1637,11 +1746,18 @@ export function App() {
                                   {localNicknames[participant.id] ? (
                                     <Text size="1" color="gray">Server name: {participant.name}</Text>
                                   ) : null}
-                                  {participant.isSelf ? <Text size="1" color="gray">You</Text> : null}
+                                  {getParticipantStateLabels(participant).map((label) => (
+                                    <Badge key={`${participant.id}-${label}`} variant="soft" color="gray">
+                                      {label}
+                                    </Badge>
+                                  ))}
                                 </Flex>
                               </Box>
                             </Flex>
-                            <StatusChip status={participant.status} label={participant.status} />
+                            <StatusChip
+                              status={participant.status}
+                              label={getParticipantStatusLabel(participant)}
+                            />
                           </Flex>
                         </Button>
                       ))}
@@ -1671,8 +1787,16 @@ export function App() {
                           </Box>
                           <Box>
                             <Text size="1" color="gray">Status</Text>
-                            <Flex style={{ marginTop: 4 }}>
-                              <StatusChip status={selectedParticipant.status} label={selectedParticipant.status} />
+                            <Flex style={{ marginTop: 4 }} gap="2" wrap="wrap">
+                              <StatusChip
+                                status={selectedParticipant.status}
+                                label={getParticipantStatusLabel(selectedParticipant)}
+                              />
+                              {getParticipantStateLabels(selectedParticipant).map((label) => (
+                                <Badge key={`selected-${selectedParticipant.id}-${label}`} variant="soft" color="gray">
+                                  {label}
+                                </Badge>
+                              ))}
                             </Flex>
                           </Box>
                           <Box>

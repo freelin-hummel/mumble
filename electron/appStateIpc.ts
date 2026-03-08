@@ -111,6 +111,7 @@ export const registerAppStateIpc = () => {
   ipcMain.removeHandler("app:remember-server");
   ipcMain.removeHandler("app:disconnect");
   ipcMain.removeHandler("app:select-channel");
+  ipcMain.removeHandler("app:join-channel");
   ipcMain.removeHandler("app:send-chat-message");
   ipcMain.removeHandler("app:update-audio");
   ipcMain.removeHandler("app:update-preferences");
@@ -124,6 +125,7 @@ export const registerAppStateIpc = () => {
     return getStore().disconnect();
   });
   ipcMain.handle("app:select-channel", (_event, channelId: string) => getStore().selectChannel(channelId));
+  ipcMain.handle("app:join-channel", (_event, channelId: string) => getStore().joinChannel(channelId));
   ipcMain.handle("app:send-chat-message", (_event, body: string) => getStore().sendChatMessage(body));
   ipcMain.handle("app:update-audio", (_event, audio: Partial<AppClientAudioSettings>) => (
     getStore().updateAudioSettings(audio)
