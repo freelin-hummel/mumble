@@ -11,7 +11,7 @@ test("address-related failures recommend host and port checks before retrying", 
 
   assert.equal(recovery.summary, "Review voice.example.test:70000 before retrying the join request.");
   assert.equal(recovery.steps[0], "Check the host and port format. IPv6 addresses should use [host]:port notation.");
-  assert.match(recovery.steps[2] ?? "", /Retry voice\.example\.test:70000/);
+  assert.match(recovery.steps[2], /Retry voice\.example\.test:70000/);
 });
 
 test("nickname-related failures guide the user back to identity setup", () => {
@@ -21,7 +21,7 @@ test("nickname-related failures guide the user back to identity setup", () => {
 
   assert.equal(recovery.summary, "Update the identity details and retry once the form is complete.");
   assert.equal(recovery.steps[0], "Set a nickname before joining voice.example.test:64738.");
-  assert.match(recovery.steps[2] ?? "", /Retry the connection/);
+  assert.match(recovery.steps[2], /Retry the connection/);
 });
 
 test("generic failures keep retry and diagnostics guidance available", () => {

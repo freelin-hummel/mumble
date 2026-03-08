@@ -713,10 +713,16 @@ export function App() {
     () => formatPushToTalkShortcut(appState.preferences.pushToTalkShortcut),
     [appState.preferences.pushToTalkShortcut]
   );
-  const connectionRecovery = useMemo(() => buildFailedConnectionRecovery(connectionError, {
-    serverAddress: connectionServerAddress,
-    nickname: connectionNickname
-  }), [connectionError, connectionNickname, connectionServerAddress]);
+  const connectionRecovery = useMemo(() => {
+    if (!connectionError) {
+      return null;
+    }
+
+    return buildFailedConnectionRecovery(connectionError, {
+      serverAddress: connectionServerAddress,
+      nickname: connectionNickname
+    });
+  }, [connectionError, connectionNickname, connectionServerAddress]);
 
   useEffect(() => {
     setDismissedConnectionErrorKey(null);
@@ -1000,7 +1006,7 @@ export function App() {
                         <StatusChip status="live" label={`${appState.telemetry.jitterMs} ms jitter`} />
                       ) : null}
                     </Flex>
-                    {connectionError && dismissedConnectionErrorKey !== connectionErrorKey ? (
+                    {connectionError && connectionRecovery && dismissedConnectionErrorKey !== connectionErrorKey ? (
                       <Card className="section-card">
                         <Flex direction="column" gap="3">
                           <SectionHeader
