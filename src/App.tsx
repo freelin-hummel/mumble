@@ -36,6 +36,7 @@ import {
 import { QuickAction } from "./components/QuickAction";
 import { SectionHeader } from "./components/SectionHeader";
 import { StatusChip } from "./components/StatusChip";
+import { buildFailedConnectionRecovery } from "./connectionRecovery";
 import {
   createDspPipeline,
   dspFeatures,
@@ -225,8 +226,10 @@ export function App() {
   const [meteringError, setMeteringError] = useState<string | null>(null);
   const [pushToTalkPressed, setPushToTalkPressed] = useState(false);
   const outputPreviewRef = useRef<HTMLAudioElement>(null);
+  const diagnosticsSectionRef = useRef<HTMLDivElement>(null);
   const fallbackLiveSessionTimersRef = useRef<number[]>([]);
   const pushToTalkPressedRef = useRef(false);
+  const [dismissedConnectionErrorKey, setDismissedConnectionErrorKey] = useState<string | null>(null);
   const audioSettingsRef = useRef({
     captureEnabled: fallbackAppState.audio.captureEnabled,
     selfMuted: fallbackAppState.audio.selfMuted,
@@ -698,6 +701,9 @@ export function App() {
     [appState.activeChannelId, appState.messages]
   );
   const connectionError = formError ?? appState.connection.error;
+  const connectionServerAddress = serverAddress.trim() || appState.connection.serverAddress;
+  const connectionNickname = nickname.trim() || appState.connection.nickname;
+  const connectionErrorKey = [connectionError, connectionServerAddress, connectionNickname].join("::");
   const isElectronBridgeAvailable = Boolean(window.app?.getState);
   const voiceActivationLabel = useMemo(
     () => getVoiceActivationLabel(voiceActivation.mode),
@@ -707,6 +713,20 @@ export function App() {
     () => formatPushToTalkShortcut(appState.preferences.pushToTalkShortcut),
     [appState.preferences.pushToTalkShortcut]
   );
+  const connectionRecovery = useMemo(() => {
+    if (!connectionError) {
+      return null;
+    }
+
+    return buildFailedConnectionRecovery(connectionError, {
+      serverAddress: connectionServerAddress,
+      nickname: connectionNickname
+    });
+  }, [connectionError, connectionNickname, connectionServerAddress]);
+
+  useEffect(() => {
+    setDismissedConnectionErrorKey(null);
+  }, [connectionErrorKey]);
 
   const connectToServer = async () => {
     const normalizedServerAddress = serverAddress.trim();
@@ -851,6 +871,17 @@ export function App() {
     }
   };
 
+  const openDiagnostics = () => {
+    if (!appState.preferences.showLatencyDetails) {
+      void updatePreferences({ showLatencyDetails: true });
+    }
+
+    diagnosticsSectionRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "start"
+    });
+  };
+
   const sendChatMessage = async () => {
     if (!chatDraft.trim()) {
       setFormError("Enter a message before sending.");
@@ -975,8 +1006,49 @@ export function App() {
                         <StatusChip status="live" label={`${appState.telemetry.jitterMs} ms jitter`} />
                       ) : null}
                     </Flex>
-                    {connectionError ? (
-                      <Text size="2" color="ruby">{connectionError}</Text>
+                    {connectionError && connectionRecovery && dismissedConnectionErrorKey !== connectionErrorKey ? (
+                      <Card className="section-card">
+                        <Flex direction="column" gap="3">
+                          <SectionHeader
+                            title="Connection recovery"
+                            subtitle={connectionRecovery.summary}
+                          />
+                          <Text size="2" color="ruby">{connectionError}</Text>
+                          <Flex direction="column" gap="2">
+                            {connectionRecovery.steps.map((step) => (
+                              <Text key={step} size="2" color="gray">• {step}</Text>
+                            ))}
+                          </Flex>
+                          <Flex gap="3" wrap="wrap">
+                            <Button
+                              size="2"
+                              onClick={() => {
+                                void connectToServer();
+                              }}
+                              disabled={appState.connection.status === "connecting"}
+                            >
+                              Retry connection
+                            </Button>
+                            <Button
+                              size="2"
+                              variant="soft"
+                              onClick={openDiagnostics}
+                            >
+                              Open diagnostics
+                            </Button>
+                            <Button
+                              size="2"
+                              variant="ghost"
+                              onClick={() => {
+                                setFormError(null);
+                                setDismissedConnectionErrorKey(connectionErrorKey);
+                              }}
+                            >
+                              Dismiss
+                            </Button>
+                          </Flex>
+                        </Flex>
+                      </Card>
                     ) : null}
                     {isLoadingAppState ? (
                       <Text size="2" color="gray">Loading saved desktop state…</Text>
@@ -1387,78 +1459,80 @@ export function App() {
                 </Flex>
               </Card>
 
-              <Card className="section-card fade-in delay-3">
-                <Flex direction="column" gap="4">
-                  <SectionHeader title="Quick actions" subtitle="Renderer-driven session controls" />
-                  <Grid columns={{ initial: "1", sm: "2" }} gap="3">
-                    <QuickAction
-                      title="Mute"
-                      description={appState.audio.selfMuted ? "Unmute microphone" : "Mute microphone"}
-                      icon={<SpeakerOffIcon />}
-                      active={appState.audio.selfMuted}
-                      onClick={() => {
-                        void updateAudioSettings({ selfMuted: !appState.audio.selfMuted });
-                      }}
-                    />
-                    <QuickAction
-                      title="Output"
-                      description="Route back to the system output"
-                      icon={<SpeakerLoudIcon />}
-                      active={appState.audio.outputDeviceId === SYSTEM_DEFAULT_DEVICE_ID}
-                      onClick={() => {
-                        void updateAudioSettings({ outputDeviceId: SYSTEM_DEFAULT_DEVICE_ID });
-                      }}
-                    />
-                    <QuickAction
-                      title="Latency"
-                      description={appState.preferences.showLatencyDetails ? "Hide diagnostics" : "Show diagnostics"}
-                      icon={<LightningBoltIcon />}
-                      active={appState.preferences.showLatencyDetails}
-                      onClick={() => {
-                        void updatePreferences({ showLatencyDetails: !appState.preferences.showLatencyDetails });
-                      }}
-                    />
-                    <QuickAction
-                      title="Rooms"
-                      description={activeChannel ? `Switch from ${activeChannel.name}` : "Cycle the active room"}
-                      icon={<ChatBubbleIcon />}
-                      onClick={() => {
-                        void cycleChannel();
-                      }}
-                    />
-                  </Grid>
-                  {appState.preferences.showLatencyDetails ? (
-                    <Card className="section-card">
-                      <Flex direction="column" gap="3">
-                        <Text size="2">Latency: {appState.telemetry.latencyMs ?? "—"} ms</Text>
-                        <Text size="2">Jitter: {appState.telemetry.jitterMs ?? "—"} ms</Text>
-                        <Text size="2">Packet loss: {appState.telemetry.packetLoss ?? "—"}%</Text>
-                        <Flex gap="3" wrap="wrap" align="center">
-                          <Button
-                            variant="soft"
-                            onClick={() => {
-                              void exportDiagnostics();
-                            }}
-                            disabled={!window.app?.exportDiagnostics || isExportingDiagnostics}
-                          >
-                            <DownloadIcon />
-                            {isExportingDiagnostics ? "Exporting…" : "Export diagnostics"}
-                          </Button>
-                          <Text size="1" color="gray">
-                            Includes structured logs plus network and audio diagnostics for bug reports.
-                          </Text>
+              <div ref={diagnosticsSectionRef}>
+                <Card className="section-card fade-in delay-3">
+                  <Flex direction="column" gap="4">
+                    <SectionHeader title="Quick actions" subtitle="Renderer-driven session controls" />
+                    <Grid columns={{ initial: "1", sm: "2" }} gap="3">
+                      <QuickAction
+                        title="Mute"
+                        description={appState.audio.selfMuted ? "Unmute microphone" : "Mute microphone"}
+                        icon={<SpeakerOffIcon />}
+                        active={appState.audio.selfMuted}
+                        onClick={() => {
+                          void updateAudioSettings({ selfMuted: !appState.audio.selfMuted });
+                        }}
+                      />
+                      <QuickAction
+                        title="Output"
+                        description="Route back to the system output"
+                        icon={<SpeakerLoudIcon />}
+                        active={appState.audio.outputDeviceId === SYSTEM_DEFAULT_DEVICE_ID}
+                        onClick={() => {
+                          void updateAudioSettings({ outputDeviceId: SYSTEM_DEFAULT_DEVICE_ID });
+                        }}
+                      />
+                      <QuickAction
+                        title="Latency"
+                        description={appState.preferences.showLatencyDetails ? "Hide diagnostics" : "Show diagnostics"}
+                        icon={<LightningBoltIcon />}
+                        active={appState.preferences.showLatencyDetails}
+                        onClick={() => {
+                          void updatePreferences({ showLatencyDetails: !appState.preferences.showLatencyDetails });
+                        }}
+                      />
+                      <QuickAction
+                        title="Rooms"
+                        description={activeChannel ? `Switch from ${activeChannel.name}` : "Cycle the active room"}
+                        icon={<ChatBubbleIcon />}
+                        onClick={() => {
+                          void cycleChannel();
+                        }}
+                      />
+                    </Grid>
+                    {appState.preferences.showLatencyDetails ? (
+                      <Card className="section-card">
+                        <Flex direction="column" gap="3">
+                          <Text size="2">Latency: {appState.telemetry.latencyMs ?? "—"} ms</Text>
+                          <Text size="2">Jitter: {appState.telemetry.jitterMs ?? "—"} ms</Text>
+                          <Text size="2">Packet loss: {appState.telemetry.packetLoss ?? "—"}%</Text>
+                          <Flex gap="3" wrap="wrap" align="center">
+                            <Button
+                              variant="soft"
+                              onClick={() => {
+                                void exportDiagnostics();
+                              }}
+                              disabled={!window.app?.exportDiagnostics || isExportingDiagnostics}
+                            >
+                              <DownloadIcon />
+                              {isExportingDiagnostics ? "Exporting…" : "Export diagnostics"}
+                            </Button>
+                            <Text size="1" color="gray">
+                              Includes structured logs plus network and audio diagnostics for bug reports.
+                            </Text>
+                          </Flex>
+                          {diagnosticsMessage ? (
+                            <Text size="1" color="green">{diagnosticsMessage}</Text>
+                          ) : null}
+                          {diagnosticsError ? (
+                            <Text size="1" color="ruby">{diagnosticsError}</Text>
+                          ) : null}
                         </Flex>
-                        {diagnosticsMessage ? (
-                          <Text size="1" color="green">{diagnosticsMessage}</Text>
-                        ) : null}
-                        {diagnosticsError ? (
-                          <Text size="1" color="ruby">{diagnosticsError}</Text>
-                        ) : null}
-                      </Flex>
-                    </Card>
-                  ) : null}
-                </Flex>
-              </Card>
+                      </Card>
+                    ) : null}
+                  </Flex>
+                </Card>
+              </div>
 
               <Card className="section-card fade-in delay-3">
                 <Flex direction="column" gap="4">
