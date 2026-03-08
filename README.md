@@ -78,14 +78,16 @@ handshake, derives fresh session keys, and validates encrypted UDP voice transpo
 ## Legacy parity review
 
 The legacy web bootstrap still provides the most complete inventory of desktop client surfaces in
-`legacy/clients/web-client/src/features.js`. The current Electron renderer only partially covers 9
-of those 40 legacy screens today, with the remaining 31 still missing.
+`legacy/clients/web-client/src/features.js`. The current Electron renderer now partially covers 14
+of those 40 legacy screens today, with the remaining 26 still missing.
 
 - Reviewed parity inventory: `parity-review.mjs`
 - Regression coverage for the review: `tests/parity-review.test.ts`
-- Current partial coverage: core workspace (`main-window`, `connect-dialog`, `text-message`),
-  audio (`audio-input`, `audio-output`, `audio-stats`, `ptt-button-widget`), and preferences
-  (`config-dialog`, `network-config`)
+- Current partial coverage: core workspace (`main-window`, `connect-dialog`,
+  `connect-dialog-edit`, `text-message`), audio (`audio-input`, `audio-output`, `audio-stats`,
+  `ptt-button-widget`), preferences (`config-dialog`, `network-config`), shortcuts
+  (`global-shortcut`, `global-shortcut-buttons`, `global-shortcut-target`), and administration
+  (`failed-connection-dialog`)
 - Webapp-only additions not present in the legacy screen list: secure transport self-test,
   structured diagnostics export, and renderer-side DSP controls
 
