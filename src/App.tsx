@@ -2769,10 +2769,6 @@ export function App() {
                                 <Box
                                   className="participant-avatar compact-avatar"
                                   style={{
-                                    width: 38,
-                                    height: 38,
-                                    borderRadius: 12,
-                                    background: "rgba(255,255,255,0.08)",
                                     display: "grid",
                                     placeItems: "center",
                                   }}
