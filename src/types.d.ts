@@ -72,14 +72,27 @@ declare global {
     target: "toggleMute" | "selectSystemOutput" | "toggleLatencyDetails" | "cycleChannel";
   }
 
+  interface AppClientFavoriteServer {
+    address: string;
+    label: string;
+  }
+
+  interface AppClientVoiceProcessingSettings {
+    agc: boolean;
+    noiseSuppression: boolean;
+    echoCancellation: boolean;
+  }
+
   interface AppClientPreferences {
     pushToTalk: boolean;
     pushToTalkShortcut: string;
     shortcutBindings: AppClientShortcutBinding[];
+    favoriteServers: AppClientFavoriteServer[];
     localNicknames: Record<string, string>;
     autoReconnect: boolean;
     notificationsEnabled: boolean;
     showLatencyDetails: boolean;
+    voiceProcessing: AppClientVoiceProcessingSettings;
   }
 
   interface AppClientTelemetry {

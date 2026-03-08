@@ -45,9 +45,15 @@ test("desktop settings persist across restart via the app state storage file", a
       pushToTalk: true,
       pushToTalkShortcut: "v",
       shortcutBindings: [{ target: "toggleMute", shortcut: "m" }],
+      favoriteServers: [{ address: "voice.example.test:64738", label: "Primary" }],
       autoReconnect: false,
       notificationsEnabled: false,
-      showLatencyDetails: true
+      showLatencyDetails: true,
+      voiceProcessing: {
+        agc: false,
+        noiseSuppression: true,
+        echoCancellation: true
+      }
     });
     firstRunStore.rememberServer("stage.example.test:64738");
     await firstRunStore.connect({
@@ -79,13 +85,19 @@ test("desktop settings persist across restart via the app state storage file", a
       pushToTalk: true,
       pushToTalkShortcut: "KeyV",
       shortcutBindings: [{ target: "toggleMute", shortcut: "KeyM" }],
+      favoriteServers: [{ address: "voice.example.test:64738", label: "Primary" }],
       localNicknames: {},
       autoReconnect: false,
       notificationsEnabled: false,
-      showLatencyDetails: true
+      showLatencyDetails: true,
+      voiceProcessing: {
+        agc: false,
+        noiseSuppression: true,
+        echoCancellation: true
+      }
     });
 
-    assert.match(readFileSync(statePath, "utf8"), /"schemaVersion": 1/);
+    assert.match(readFileSync(statePath, "utf8"), new RegExp(`"schemaVersion": ${PERSISTED_APP_CLIENT_STATE_VERSION}`));
   });
 });
 
@@ -130,10 +142,16 @@ test("loadPersistedAppClientState migrates legacy settings files without losing 
         pushToTalk: true,
         pushToTalkShortcut: "KeyV",
         shortcutBindings: [{ target: "toggleLatencyDetails", shortcut: "KeyL" }],
+        favoriteServers: [],
         localNicknames: {},
         autoReconnect: false,
         notificationsEnabled: false,
-        showLatencyDetails: true
+        showLatencyDetails: true,
+        voiceProcessing: {
+          agc: true,
+          noiseSuppression: true,
+          echoCancellation: false
+        }
       }
     });
   });

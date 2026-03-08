@@ -56,14 +56,27 @@ export type AppClientAudioSettings = {
   outputGain: number;
 };
 
+export type AppClientFavoriteServer = {
+  address: string;
+  label: string;
+};
+
+export type AppClientVoiceProcessingSettings = {
+  agc: boolean;
+  noiseSuppression: boolean;
+  echoCancellation: boolean;
+};
+
 export type AppClientPreferences = {
   pushToTalk: boolean;
   pushToTalkShortcut: string;
   shortcutBindings: AppClientShortcutBinding[];
+  favoriteServers: AppClientFavoriteServer[];
   localNicknames: Record<string, string>;
   autoReconnect: boolean;
   notificationsEnabled: boolean;
   showLatencyDetails: boolean;
+  voiceProcessing: AppClientVoiceProcessingSettings;
 };
 
 export type AppClientTelemetry = {
@@ -97,7 +110,7 @@ export type AppClientState = {
   recentServers: string[];
 };
 
-export const PERSISTED_APP_CLIENT_STATE_VERSION = 1;
+ export const PERSISTED_APP_CLIENT_STATE_VERSION = 2;
 
 export type PersistedAppClientState = {
   schemaVersion: typeof PERSISTED_APP_CLIENT_STATE_VERSION;
@@ -181,10 +194,16 @@ const defaultPreferences = Object.freeze<AppClientPreferences>({
   pushToTalk: false,
   pushToTalkShortcut: DEFAULT_PUSH_TO_TALK_SHORTCUT,
   shortcutBindings: [],
+  favoriteServers: [],
   localNicknames: {},
   autoReconnect: true,
   notificationsEnabled: true,
-  showLatencyDetails: false
+  showLatencyDetails: false,
+  voiceProcessing: {
+    agc: true,
+    noiseSuppression: true,
+    echoCancellation: false
+  }
 });
 
 const defaultTelemetry = Object.freeze<AppClientTelemetry>({
@@ -463,6 +482,50 @@ const normalizeLocalNicknames = (value: unknown): Record<string, string> => {
   }, {});
 };
 
+const normalizeVoiceProcessingSettings = (
+  settings?: Partial<AppClientVoiceProcessingSettings> | null
+): AppClientVoiceProcessingSettings => ({
+  agc: typeof settings?.agc === "boolean"
+    ? settings.agc
+    : defaultPreferences.voiceProcessing.agc,
+  noiseSuppression: typeof settings?.noiseSuppression === "boolean"
+    ? settings.noiseSuppression
+    : defaultPreferences.voiceProcessing.noiseSuppression,
+  echoCancellation: typeof settings?.echoCancellation === "boolean"
+    ? settings.echoCancellation
+    : defaultPreferences.voiceProcessing.echoCancellation
+});
+
+const normalizeFavoriteServers = (favoriteServers?: unknown): AppClientFavoriteServer[] => {
+  if (!Array.isArray(favoriteServers)) {
+    return [];
+  }
+
+  const seenAddresses = new Set<string>();
+  const normalizedFavorites: AppClientFavoriteServer[] = [];
+
+  for (const favorite of favoriteServers) {
+    if (!isRecord(favorite) || typeof favorite.address !== "string") {
+      continue;
+    }
+
+    const normalizedAddress = favorite.address.trim();
+    if (normalizedAddress.length === 0 || seenAddresses.has(normalizedAddress)) {
+      continue;
+    }
+
+    seenAddresses.add(normalizedAddress);
+    normalizedFavorites.push({
+      address: normalizedAddress,
+      label: typeof favorite.label === "string" && favorite.label.trim().length > 0
+        ? favorite.label.trim()
+        : normalizedAddress
+    });
+  }
+
+  return normalizedFavorites.slice(0, 10);
+};
+
 const normalizeAudioSettings = (audio?: Partial<AppClientAudioSettings> | null): AppClientAudioSettings => ({
   inputDeviceId: typeof audio?.inputDeviceId === "string" && audio.inputDeviceId.length > 0
     ? audio.inputDeviceId
@@ -490,6 +553,7 @@ const normalizePreferences = (preferences?: Partial<AppClientPreferences> | null
     : defaultPreferences.pushToTalk,
   pushToTalkShortcut: normalizePushToTalkShortcut(preferences?.pushToTalkShortcut),
   shortcutBindings: normalizeShortcutBindings(preferences?.shortcutBindings),
+  favoriteServers: normalizeFavoriteServers(preferences?.favoriteServers),
   localNicknames: normalizeLocalNicknames(preferences?.localNicknames),
   autoReconnect: typeof preferences?.autoReconnect === "boolean"
     ? preferences.autoReconnect
@@ -499,7 +563,8 @@ const normalizePreferences = (preferences?: Partial<AppClientPreferences> | null
     : defaultPreferences.notificationsEnabled,
   showLatencyDetails: typeof preferences?.showLatencyDetails === "boolean"
     ? preferences.showLatencyDetails
-    : defaultPreferences.showLatencyDetails
+    : defaultPreferences.showLatencyDetails,
+  voiceProcessing: normalizeVoiceProcessingSettings(preferences?.voiceProcessing)
 });
 
 const normalizeRecentServers = (recentServers?: string[] | null) => {
@@ -524,7 +589,11 @@ export const migratePersistedAppClientState = (persistedState?: unknown | null):
   }
 
   const schemaVersion = persistedState.schemaVersion;
-  if (schemaVersion !== undefined && schemaVersion !== PERSISTED_APP_CLIENT_STATE_VERSION) {
+  if (
+    schemaVersion !== undefined
+    && schemaVersion !== 1
+    && schemaVersion !== PERSISTED_APP_CLIENT_STATE_VERSION
+  ) {
     return null;
   }
 
