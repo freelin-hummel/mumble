@@ -786,6 +786,26 @@ export class AppClientStore {
     }
   }
 
+  public rememberServer(serverAddress: string) {
+    const normalizedAddress = serverAddress.trim();
+    if (normalizedAddress.length === 0) {
+      return this.getState();
+    }
+
+    this.updateState((currentState) => ({
+      ...currentState,
+      connection: {
+        ...currentState.connection,
+        serverAddress: normalizedAddress
+      },
+      recentServers: buildRecentServers(currentState.recentServers, normalizedAddress)
+    }));
+    this.log("info", "connection.server.remembered", {
+      serverAddress: normalizedAddress
+    });
+    return this.getState();
+  }
+
   public disconnect() {
     this.log("info", "connection.disconnect.requested", {
       serverAddress: this.state.connection.serverAddress
