@@ -18,7 +18,7 @@ import {
   getDiagnosticsLogStore,
   type RendererDiagnosticsSnapshot
 } from "./diagnostics.js";
-import { getVoiceTransportStatus } from "./voiceTransportIpc.js";
+import { getVoiceTransportStatus, shutdownVoiceTransport, startLoopbackVoiceTransport } from "./voiceTransportIpc.js";
 import { createTestServerSessions } from "../src/testServerSession.js";
 
 const APP_STATE_CHANNEL = "app:state-changed";
@@ -112,13 +112,22 @@ export const registerAppStateIpc = () => {
   ipcMain.handle("app:get-state", () => getStore().getState());
   ipcMain.handle("app:connect", async (_event, request: AppClientConnectRequest) => {
     const nextState = await getStore().connect(request);
-    startTestServerSession(nextState.connection.nickname);
-    return getStore().getState();
+
+    try {
+      await startLoopbackVoiceTransport(nextState.connection.nickname);
+      startTestServerSession(nextState.connection.nickname);
+      return getStore().getState();
+    } catch (error) {
+      clearLiveSessionTimers();
+      await shutdownVoiceTransport();
+      getStore().disconnect();
+      throw error;
+    }
   });
   ipcMain.handle("app:remember-server", (_event, serverAddress: string) => getStore().rememberServer(serverAddress));
   ipcMain.handle("app:disconnect", () => {
     clearLiveSessionTimers();
-    return getStore().disconnect();
+    return shutdownVoiceTransport().then(() => getStore().disconnect());
   });
   ipcMain.handle("app:select-channel", (_event, channelId: string) => getStore().selectChannel(channelId));
   ipcMain.handle("app:send-chat-message", (_event, body: string) => getStore().sendChatMessage(body));

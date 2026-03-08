@@ -52,6 +52,23 @@ test("explicit device selection updates the resolved routes and capture constrai
     }
   });
   assert.equal(createInputDeviceConstraints(SYSTEM_DEFAULT_DEVICE_ID), true);
+  assert.deepEqual(createInputDeviceConstraints(state.selectedInputId, {
+    agc: true,
+    noiseSuppression: true,
+    echoCancellation: false
+  }), {
+    autoGainControl: true,
+    noiseSuppression: true,
+    echoCancellation: false,
+    deviceId: {
+      exact: "mic-usb"
+    }
+  });
+  assert.deepEqual(createInputDeviceConstraints(SYSTEM_DEFAULT_DEVICE_ID, {
+    noiseSuppression: true
+  }), {
+    noiseSuppression: true
+  });
 });
 
 test("refreshing after hot-swap falls back to the current default when a selected device disappears", () => {

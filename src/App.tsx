@@ -129,8 +129,14 @@ const audioPresets = [
 
 const ANALYSER_SMOOTHING_CONSTANT = 0.85;
 const RMS_TO_LEVEL_SCALING_FACTOR = 4.5;
+const VOICE_CAPTURE_TIMESLICE_MS = 250;
 const BASE_CHANNEL_PADDING = 16;
 const CHANNEL_INDENT_PER_LEVEL = 16;
+const PREFERRED_VOICE_CAPTURE_MIME_TYPES = [
+  "audio/webm;codecs=opus",
+  "audio/webm",
+  "audio/ogg;codecs=opus"
+] as const;
 
 const statusCopy: Record<AppClientConnectionState["status"], string> = {
   disconnected: "Disconnected",
@@ -255,6 +261,8 @@ export function App() {
   const [dspPipeline, setDspPipelineState] = useState(() => loadDspPipeline());
   const [voiceActivation, setVoiceActivation] = useState(() => createInitialVoiceActivationState());
   const [meteringError, setMeteringError] = useState<string | null>(null);
+  const [voiceTransportStatus, setVoiceTransportStatus] = useState<VoiceTransportStatus | null>(null);
+  const [voicePlaybackError, setVoicePlaybackError] = useState<string | null>(null);
   const [pushToTalkPressed, setPushToTalkPressed] = useState(false);
   const [selectedParticipantId, setSelectedParticipantId] = useState<string | null>(null);
   const [participantNicknameDraft, setParticipantNicknameDraft] = useState("");
@@ -262,6 +270,11 @@ export function App() {
   const diagnosticsSectionRef = useRef<HTMLDivElement>(null);
   const fallbackLiveSessionTimersRef = useRef<number[]>([]);
   const pushToTalkPressedRef = useRef(false);
+  const voiceActivationRef = useRef(voiceActivation);
+  const voiceCaptureMimeTypeRef = useRef<string | null>(null);
+  const playbackQueueRef = useRef<string[]>([]);
+  const activePlaybackUrlRef = useRef<string | null>(null);
+  const isPlaybackActiveRef = useRef(false);
   const [dismissedConnectionErrorKey, setDismissedConnectionErrorKey] = useState<string | null>(null);
   const audioSettingsRef = useRef({
     captureEnabled: fallbackAppState.audio.captureEnabled,
@@ -308,6 +321,64 @@ export function App() {
       }, delayMs)
     ));
   }, [clearFallbackLiveSessionTimers, updateLocalAppState]);
+
+  const clearBufferedPlayback = useCallback(() => {
+    const audioElement = outputPreviewRef.current;
+
+    playbackQueueRef.current.forEach((url) => {
+      URL.revokeObjectURL(url);
+    });
+    playbackQueueRef.current = [];
+    isPlaybackActiveRef.current = false;
+
+    if (activePlaybackUrlRef.current) {
+      URL.revokeObjectURL(activePlaybackUrlRef.current);
+      activePlaybackUrlRef.current = null;
+    }
+
+    if (audioElement) {
+      audioElement.pause();
+      audioElement.removeAttribute("src");
+      audioElement.load();
+    }
+  }, []);
+
+  const playQueuedPlayback = useCallback(function playQueuedPlayback() {
+    const audioElement = outputPreviewRef.current;
+    if (!audioElement || isPlaybackActiveRef.current) {
+      return;
+    }
+
+    const nextUrl = playbackQueueRef.current.shift();
+    if (!nextUrl) {
+      return;
+    }
+
+    if (activePlaybackUrlRef.current) {
+      URL.revokeObjectURL(activePlaybackUrlRef.current);
+    }
+
+    activePlaybackUrlRef.current = nextUrl;
+    isPlaybackActiveRef.current = true;
+    audioElement.src = nextUrl;
+
+    void audioElement.play().then(() => {
+      setVoicePlaybackError(null);
+    }).catch((error) => {
+      isPlaybackActiveRef.current = false;
+      if (activePlaybackUrlRef.current) {
+        URL.revokeObjectURL(activePlaybackUrlRef.current);
+        activePlaybackUrlRef.current = null;
+      }
+      setVoicePlaybackError(error instanceof Error ? error.message : "Unable to play remote audio.");
+      playQueuedPlayback();
+    });
+  }, []);
+
+  const enqueuePlaybackBlob = useCallback((blob: Blob) => {
+    playbackQueueRef.current.push(URL.createObjectURL(blob));
+    playQueuedPlayback();
+  }, [playQueuedPlayback]);
 
   const updateAudioSettings = useCallback(async (audio: Partial<AppClientAudioSettings>) => {
     if (window.app?.updateAudioSettings) {
@@ -390,6 +461,10 @@ export function App() {
     pushToTalkPressedRef.current = pushToTalkPressed;
   }, [pushToTalkPressed]);
 
+  useEffect(() => {
+    voiceActivationRef.current = voiceActivation;
+  }, [voiceActivation]);
+
   const refreshAudioDevices = useCallback(async () => {
     if (!mediaDevices?.enumerateDevices) {
       return;
@@ -460,6 +535,90 @@ export function App() {
       active = false;
     };
   }, [audioDevices.selectedOutputId]);
+
+  useEffect(() => {
+    const audioElement = outputPreviewRef.current;
+    if (!audioElement) {
+      return undefined;
+    }
+
+    const handleEnded = () => {
+      isPlaybackActiveRef.current = false;
+      if (activePlaybackUrlRef.current) {
+        URL.revokeObjectURL(activePlaybackUrlRef.current);
+        activePlaybackUrlRef.current = null;
+      }
+      playQueuedPlayback();
+    };
+    const handleError = () => {
+      isPlaybackActiveRef.current = false;
+      if (activePlaybackUrlRef.current) {
+        URL.revokeObjectURL(activePlaybackUrlRef.current);
+        activePlaybackUrlRef.current = null;
+      }
+      setVoicePlaybackError("Remote audio playback failed.");
+      playQueuedPlayback();
+    };
+
+    audioElement.addEventListener("ended", handleEnded);
+    audioElement.addEventListener("error", handleError);
+
+    return () => {
+      audioElement.removeEventListener("ended", handleEnded);
+      audioElement.removeEventListener("error", handleError);
+      clearBufferedPlayback();
+    };
+  }, [clearBufferedPlayback, playQueuedPlayback]);
+
+  useEffect(() => {
+    if (!window.voice) {
+      return undefined;
+    }
+
+    let active = true;
+
+    const syncVoiceStatus = async () => {
+      try {
+        const status = await window.voice?.getStatus();
+        if (active && status) {
+          setVoiceTransportStatus(status);
+        }
+      } catch (error) {
+        if (active) {
+          setVoicePlaybackError(error instanceof Error ? error.message : "Unable to query voice transport status.");
+        }
+      }
+    };
+
+    void syncVoiceStatus();
+    const unsubscribeStatus = window.voice.onStatus((status) => {
+      if (active) {
+        setVoiceTransportStatus(status);
+      }
+    });
+    const unsubscribeMessage = window.voice.onMessage((packet) => {
+      const mimeType = voiceCaptureMimeTypeRef.current;
+      if (!active || !mimeType) {
+        return;
+      }
+
+      enqueuePlaybackBlob(new Blob([packet.payload], { type: mimeType }));
+    });
+
+    return () => {
+      active = false;
+      unsubscribeStatus();
+      unsubscribeMessage();
+      clearBufferedPlayback();
+    };
+  }, [clearBufferedPlayback, enqueuePlaybackBlob]);
+
+  useEffect(() => {
+    if (appState.connection.status !== "connected") {
+      voiceCaptureMimeTypeRef.current = null;
+      clearBufferedPlayback();
+    }
+  }, [appState.connection.status, clearBufferedPlayback]);
 
   useEffect(() => {
     if (!appState.preferences.pushToTalk) {
@@ -571,10 +730,14 @@ export function App() {
     let animationFrameId = 0;
     let mediaStream: MediaStream | null = null;
     let audioContext: AudioContext | null = null;
+    let mediaRecorder: MediaRecorder | null = null;
 
     const stopMetering = () => {
       if (animationFrameId) {
         window.cancelAnimationFrame(animationFrameId);
+      }
+      if (mediaRecorder && mediaRecorder.state !== "inactive") {
+        mediaRecorder.stop();
       }
       mediaStream?.getTracks().forEach((track) => {
         track.stop();
@@ -587,7 +750,7 @@ export function App() {
     const startMetering = async () => {
       try {
         mediaStream = await mediaDevices.getUserMedia({
-          audio: createInputDeviceConstraints(audioDevices.selectedInputId),
+          audio: createInputDeviceConstraints(audioDevices.selectedInputId, dspPipeline.settings),
           video: false
         });
         if (cancelled) {
@@ -603,6 +766,48 @@ export function App() {
         const samples = new Float32Array(analyser.fftSize);
 
         setMeteringError(null);
+        voiceCaptureMimeTypeRef.current = null;
+        setVoicePlaybackError(null);
+
+        if (
+          typeof MediaRecorder !== "undefined"
+          && window.voice?.send
+          && appState.connection.status === "connected"
+        ) {
+          try {
+            const preferredMimeType = PREFERRED_VOICE_CAPTURE_MIME_TYPES.find((mimeType) => (
+              MediaRecorder.isTypeSupported(mimeType)
+            ));
+            mediaRecorder = preferredMimeType
+              ? new MediaRecorder(mediaStream, {
+                  mimeType: preferredMimeType,
+                  audioBitsPerSecond: 64_000
+                })
+              : new MediaRecorder(mediaStream);
+            voiceCaptureMimeTypeRef.current = mediaRecorder.mimeType || preferredMimeType || "audio/webm";
+            mediaRecorder.addEventListener("dataavailable", (event) => {
+              if (cancelled || event.data.size === 0 || !voiceActivationRef.current.isTransmitting || !window.voice?.send) {
+                return;
+              }
+
+              void event.data.arrayBuffer().then((buffer) => (
+                window.voice?.send(new Uint8Array(buffer))
+              )).catch((error) => {
+                if (!cancelled) {
+                  setVoicePlaybackError(error instanceof Error ? error.message : "Unable to stream encoded voice.");
+                }
+              });
+            });
+            mediaRecorder.addEventListener("error", () => {
+              if (!cancelled) {
+                setVoicePlaybackError("Voice capture encoding failed.");
+              }
+            });
+            mediaRecorder.start(VOICE_CAPTURE_TIMESLICE_MS);
+          } catch (error) {
+            setVoicePlaybackError(error instanceof Error ? error.message : "Voice capture encoding is unavailable.");
+          }
+        }
 
         const tick = () => {
           if (cancelled) {
@@ -660,8 +865,10 @@ export function App() {
     appState.audio.inputGain,
     appState.audio.outputGain,
     appState.audio.selfMuted,
+    appState.connection.status,
     appState.preferences.pushToTalk,
     audioDevices.selectedInputId,
+    dspPipeline.settings,
     mediaDevices
   ]);
 
@@ -1010,8 +1217,14 @@ export function App() {
           mode: voiceActivation.mode,
           isTransmitting: voiceActivation.isTransmitting,
           meteringError,
-          availableInputDevices: audioDevices.input.length,
-          availableOutputDevices: audioDevices.output.length,
+          playbackError: voicePlaybackError,
+          transportState: voiceTransportStatus?.state ?? "disconnected",
+          averageRoundTripMs: voiceTransportStatus?.averageRoundTripMs ?? null,
+          packetsSent: voiceTransportStatus?.packetsSent ?? null,
+          packetsReceived: voiceTransportStatus?.packetsReceived ?? null,
+          packetLoss: voiceTransportStatus?.packetLoss ?? null,
+          availableInputDevices: audioDevices.inputs.length,
+          availableOutputDevices: audioDevices.outputs.length,
           outputRoutingReady
         }
       });
@@ -1244,6 +1457,20 @@ export function App() {
                         status={voiceActivation.isTransmitting ? "live" : voiceActivation.mode === "muted" ? "muted" : "idle"}
                         label={voiceActivationLabel}
                       />
+                      {voiceTransportStatus ? (
+                        <StatusChip
+                          status={voiceTransportStatus.state === "connected"
+                            ? "live"
+                            : voiceTransportStatus.lastError
+                              ? "muted"
+                              : "idle"}
+                          label={voiceTransportStatus.state === "connected"
+                            ? "voice loopback ready"
+                            : voiceTransportStatus.lastError
+                              ? "voice link error"
+                              : "voice link idle"}
+                        />
+                      ) : null}
                       {appState.telemetry.jitterMs !== null ? (
                         <StatusChip status="live" label={`${appState.telemetry.jitterMs} ms jitter`} />
                       ) : null}
@@ -1455,6 +1682,9 @@ export function App() {
                         </Text>
                         {meteringError ? (
                           <Text size="1" color="ruby">{meteringError}</Text>
+                        ) : null}
+                        {voicePlaybackError ? (
+                          <Text size="1" color="ruby">{voicePlaybackError}</Text>
                         ) : null}
                       </Flex>
                     </Flex>
@@ -1847,6 +2077,14 @@ export function App() {
                           <Text size="2">Latency: {appState.telemetry.latencyMs ?? "—"} ms</Text>
                           <Text size="2">Jitter: {appState.telemetry.jitterMs ?? "—"} ms</Text>
                           <Text size="2">Packet loss: {appState.telemetry.packetLoss ?? "—"}%</Text>
+                          <Text size="2">Voice link: {voiceTransportStatus?.state ?? "—"}</Text>
+                          <Text size="2">Loopback RTT: {voiceTransportStatus?.averageRoundTripMs ?? "—"} ms</Text>
+                          <Text size="2">
+                            Voice packets: {voiceTransportStatus?.packetsSent ?? 0} sent · {voiceTransportStatus?.packetsReceived ?? 0} received
+                          </Text>
+                          {voiceTransportStatus?.cipherSuite ? (
+                            <Text size="1" color="gray">{voiceTransportStatus.cipherSuite}</Text>
+                          ) : null}
                           <Flex gap="3" wrap="wrap" align="center">
                             <Button
                               variant="soft"
