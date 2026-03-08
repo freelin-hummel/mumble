@@ -5,7 +5,7 @@ import { TCPMessageType, type ProtobufControlMessage } from "./types.js";
 const DEFAULT_MUMBLE_PORT = 64738;
 const DEFAULT_BOOTSTRAP_TIMEOUT_MS = 10_000;
 const VERSION_V1 = 0x010500;
-const VERSION_V2 = 0x0001000500000000n;
+const EXTENDED_VERSION_V2 = 0x0001000500000000n;
 
 type ConnectionControls = {
   setAuthenticating: () => void;
@@ -245,7 +245,7 @@ const encodeVersionPayload = () => Buffer.concat([
   encodeStringField(2, "mumble-electron"),
   encodeStringField(3, process.platform),
   encodeStringField(4, process.version),
-  encodeVarintField(5, VERSION_V2)
+  encodeVarintField(5, EXTENDED_VERSION_V2)
 ]);
 
 const encodeAuthenticatePayload = (nickname: string) => Buffer.concat([
@@ -381,7 +381,7 @@ const buildSessionSnapshot = (
       name: participant.name?.trim() || (isSelf ? nickname : `User ${participant.session}`),
       channelId,
       status: deriveParticipantStatus(participant),
-      isSelf: isSelf || undefined
+      isSelf: isSelf ? true : undefined
     }];
   });
 
@@ -404,14 +404,21 @@ const buildSessionSnapshot = (
   };
 };
 
-const parseBootstrapMessage = (
-  message: ProtobufControlMessage,
-  nickname: string,
-  channels: Map<number, DecodedChannelState>,
-  participants: Map<number, DecodedUserState>,
-  resolve: (value: AppClientLiveSession) => void,
-  reject: (reason?: unknown) => void
-) => {
+const parseBootstrapMessage = ({
+  message,
+  nickname,
+  channels,
+  participants,
+  resolve,
+  reject
+}: {
+  message: ProtobufControlMessage;
+  nickname: string;
+  channels: Map<number, DecodedChannelState>;
+  participants: Map<number, DecodedUserState>;
+  resolve: (value: AppClientLiveSession) => void;
+  reject: (reason?: unknown) => void;
+}) => {
   if (message.type === TCPMessageType.ChannelState) {
     const nextChannel = decodeChannelState(message.payload);
     const previousChannel = channels.get(nextChannel.channelId);
@@ -613,12 +620,19 @@ export class MumbleSessionManager {
 
       const handleMessage = (message: ProtobufControlMessage) => {
         try {
-          parseBootstrapMessage(message, nickname, channels, participants, (liveSession) => {
-            cleanup();
-            resolve(liveSession);
-          }, (reason) => {
-            cleanup();
-            reject(reason);
+          parseBootstrapMessage({
+            message,
+            nickname,
+            channels,
+            participants,
+            resolve: (liveSession) => {
+              cleanup();
+              resolve(liveSession);
+            },
+            reject: (reason) => {
+              cleanup();
+              reject(reason);
+            }
           });
         } catch (error) {
           cleanup();
