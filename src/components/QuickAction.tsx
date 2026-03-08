@@ -26,9 +26,11 @@ export function QuickAction({ title, description, icon, active = false, disabled
       <Flex direction="column" gap="2">
         <Flex align="center" gap="2">
           {icon}
-          <Text weight="bold">{title}</Text>
+          <Text size="2" weight="bold">
+            {title}
+          </Text>
         </Flex>
-        <Text size="2" color="gray">
+        <Text size="1" color="gray">
           {description}
         </Text>
       </Flex>

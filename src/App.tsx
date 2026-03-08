@@ -19,14 +19,21 @@ import {
   GlobeIcon,
   LightningBoltIcon,
   MixerHorizontalIcon,
+  OpenInNewWindowIcon,
   PersonIcon,
   SpeakerLoudIcon,
   SpeakerOffIcon,
 } from "@radix-ui/react-icons";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import {
   appendLocalChatMessageState,
-  mergeLiveSessionState,
 } from "../electron/appClientState.js";
 import {
   applyOutputDeviceSelection,
@@ -76,7 +83,18 @@ import {
   getChatViewTarget,
   getUnreadCountForTarget,
 } from "./chatState";
-import { createTestServerSessions } from "./testServerSession.js";
+import {
+  buildBase16ThemeVariables,
+  clearStoredBase16Theme,
+  loadStoredBase16Theme,
+  parseBase16Theme,
+  storeBase16Theme,
+  type Base16Theme,
+} from "./base16Theme.js";
+
+const TALKING_POPOUT_VIEW = "talking-popout";
+const getCurrentView = () =>
+  new URLSearchParams(window.location.search).get("view");
 
 const fallbackAppState: AppClientState = {
   connection: {
@@ -268,29 +286,11 @@ const getParticipantStateLabels = (participant: AppClientParticipant) => {
   return labels;
 };
 
-const createFallbackConnectedState = (
-  currentState: AppClientState,
-  serverAddress: string,
-  nickname: string,
-): AppClientState => ({
-  ...currentState,
-  connection: {
-    status: "connected",
-    serverAddress,
-    nickname,
-    error: null,
-  },
-  channels: [],
-  activeChannelId: null,
-  participants: [],
-  messages: [],
-  telemetry: {
-    latencyMs: null,
-    jitterMs: null,
-    packetLoss: null,
-  },
-  recentServers: buildRecentServers(currentState.recentServers, serverAddress),
-});
+const talkingParticipantOrder: Record<AppClientParticipant["status"], number> = {
+  live: 0,
+  muted: 1,
+  idle: 2,
+};
 
 const getVoiceActivationLabel = (
   mode: ReturnType<typeof createInitialVoiceActivationState>["mode"],
@@ -371,9 +371,15 @@ export function App() {
     Record<string, string[]>
   >({});
   const [participantNicknameDraft, setParticipantNicknameDraft] = useState("");
+  const [themeError, setThemeError] = useState<string | null>(null);
+  const [themeMessage, setThemeMessage] = useState<string | null>(null);
+  const [importedTheme, setImportedTheme] = useState<Base16Theme | null>(() =>
+    typeof window === "undefined"
+      ? null
+      : loadStoredBase16Theme(window.localStorage),
+  );
   const outputPreviewRef = useRef<HTMLAudioElement>(null);
   const diagnosticsSectionRef = useRef<HTMLDivElement>(null);
-  const fallbackLiveSessionTimersRef = useRef<number[]>([]);
   const pushToTalkPressedRef = useRef(false);
   const voiceActivationRef = useRef(voiceActivation);
   const voiceCaptureMimeTypeRef = useRef<string | null>(null);
@@ -430,29 +436,6 @@ export function App() {
       setAppState((currentState) => updater(currentState));
     },
     [],
-  );
-
-  const clearFallbackLiveSessionTimers = useCallback(() => {
-    fallbackLiveSessionTimersRef.current.forEach((timerId) => {
-      window.clearTimeout(timerId);
-    });
-    fallbackLiveSessionTimersRef.current = [];
-  }, []);
-
-  const startFallbackLiveSession = useCallback(
-    (nextNickname: string) => {
-      clearFallbackLiveSessionTimers();
-      fallbackLiveSessionTimersRef.current = createTestServerSessions(
-        nextNickname,
-      ).map(({ delayMs, session }) =>
-        window.setTimeout(() => {
-          updateLocalAppState((currentState) =>
-            mergeLiveSessionState(currentState, session),
-          );
-        }, delayMs),
-      );
-    },
-    [clearFallbackLiveSessionTimers, updateLocalAppState],
   );
 
   const clearBufferedPlayback = useCallback(() => {
@@ -1215,13 +1198,6 @@ export function App() {
     };
   }, []);
 
-  useEffect(
-    () => () => {
-      clearFallbackLiveSessionTimers();
-    },
-    [clearFallbackLiveSessionTimers],
-  );
-
   const secureTransportLabel = useMemo(() => {
     if (handshakeState === "running") {
       return "handshake running";
@@ -1359,6 +1335,34 @@ export function App() {
   const localNicknames = appState.preferences.localNicknames;
   const shortcutBindings = appState.preferences.shortcutBindings;
   const favoriteServers = appState.preferences.favoriteServers;
+  const isTalkingPopout = getCurrentView() === TALKING_POPOUT_VIEW;
+  const talkingParticipants = useMemo(
+    () =>
+      [...appState.participants].sort((leftParticipant, rightParticipant) => {
+        const statusOrderDifference =
+          talkingParticipantOrder[leftParticipant.status] -
+          talkingParticipantOrder[rightParticipant.status];
+        if (statusOrderDifference !== 0) {
+          return statusOrderDifference;
+        }
+
+        if (leftParticipant.isSelf !== rightParticipant.isSelf) {
+          return leftParticipant.isSelf ? -1 : 1;
+        }
+
+        return getParticipantDisplayName(leftParticipant, localNicknames).localeCompare(
+          getParticipantDisplayName(rightParticipant, localNicknames),
+        );
+      }),
+    [appState.participants, localNicknames],
+  );
+  const themeVariables = useMemo(
+    () =>
+      importedTheme
+        ? (buildBase16ThemeVariables(importedTheme) as CSSProperties)
+        : undefined,
+    [importedTheme],
+  );
   const connectionRecovery = useMemo(() => {
     if (!connectionError) {
       return null;
@@ -1471,36 +1475,11 @@ export function App() {
       return;
     }
 
-    updateLocalAppState((currentState) => ({
-      ...currentState,
-      connection: {
-        status: "connecting",
-        serverAddress: normalizedServerAddress,
-        nickname: normalizedNickname,
-        error: null,
-      },
-      recentServers: buildRecentServers(
-        currentState.recentServers,
-        normalizedServerAddress,
-      ),
-    }));
-
-    window.setTimeout(() => {
-      updateLocalAppState((currentState) =>
-        createFallbackConnectedState(
-          currentState,
-          normalizedServerAddress,
-          normalizedNickname,
-        ),
-      );
-      startFallbackLiveSession(normalizedNickname);
-      setChatDraft("");
-    }, 250);
+    setFormError("Open the Electron desktop shell to connect to a live server.");
   };
 
   const disconnectFromServer = async () => {
     setFormError(null);
-    clearFallbackLiveSessionTimers();
     setChatDraft("");
 
     if (window.app?.disconnect) {
@@ -1787,6 +1766,49 @@ export function App() {
     });
   };
 
+  const openTalkingPopout = useCallback(async () => {
+    setThemeError(null);
+    if (window.app?.openTalkingPopout) {
+      await window.app.openTalkingPopout();
+      return;
+    }
+
+    window.open(
+      `${window.location.pathname}?view=${TALKING_POPOUT_VIEW}`,
+      "mumble-talking-popout",
+      "popup=1,width=320,height=520,resizable=yes",
+    );
+  }, []);
+
+  const importBase16Theme = useCallback(() => {
+    const rawTheme = window.prompt("Paste a dark Base16 YAML or JSON theme.");
+    if (rawTheme === null) {
+      return;
+    }
+
+    try {
+      const parsedTheme = parseBase16Theme(rawTheme);
+      setImportedTheme(parsedTheme);
+      storeBase16Theme(window.localStorage, parsedTheme);
+      setThemeMessage(
+        `${parsedTheme.scheme}${parsedTheme.author ? ` · ${parsedTheme.author}` : ""}`,
+      );
+      setThemeError(null);
+    } catch (error) {
+      setThemeError(
+        error instanceof Error ? error.message : "Unable to import Base16 theme.",
+      );
+      setThemeMessage(null);
+    }
+  }, []);
+
+  const resetImportedTheme = useCallback(() => {
+    clearStoredBase16Theme(window.localStorage);
+    setImportedTheme(null);
+    setThemeError(null);
+    setThemeMessage("Default dark theme restored.");
+  }, []);
+
   const sendChatMessage = async () => {
     if (!chatDraft.trim()) {
       setFormError("Enter a message before sending.");
@@ -1868,28 +1890,134 @@ export function App() {
   const canSendChat =
     appState.connection.status === "connected" &&
     (chatTarget.type === "participant" || chatTarget.channelId !== null);
+  const channelsSubtitle = activeChannel
+    ? `${activeChannel.name}${selfParticipantChannel ? ` · in ${selfParticipantChannel.name}` : ""}${!activeChannel.permissions.enter ? " · no entry" : ""}`
+    : "Join a server to load rooms";
+  const participantsSubtitle = activeChannel
+    ? `${activeParticipants.length} shown${selfParticipantChannel && selfParticipantChannel.id !== activeChannel.id ? ` · you are in ${selfParticipantChannel.name}` : ""}`
+    : "Live session roster";
+
+  if (isTalkingPopout) {
+    return (
+      <Theme
+        appearance="dark"
+        accentColor="cyan"
+        grayColor="slate"
+        radius="large"
+        scaling="95%"
+      >
+        <Box
+          className="subtle-grid talking-popout-shell"
+          style={{ ...themeVariables, minHeight: "100vh" }}
+        >
+          <main className="talking-popout-main">
+            <Flex direction="column" gap="3">
+              <Flex align="center" justify="between" gap="3">
+                <Flex direction="column" gap="1">
+                  <Text size="1" color="gray">
+                    Talking popout
+                  </Text>
+                  <Heading size="4">
+                    {appState.connection.serverAddress || "Mumble session"}
+                  </Heading>
+                  <Text size="1" color="gray">
+                    {talkingParticipants.length} participant
+                    {talkingParticipants.length === 1 ? "" : "s"}
+                  </Text>
+                </Flex>
+                <Button
+                  size="1"
+                  variant="soft"
+                  onClick={() => {
+                    window.close();
+                  }}
+                >
+                  Close
+                </Button>
+              </Flex>
+              {talkingParticipants.length > 0 ? (
+                <Flex direction="column" gap="2">
+                  {talkingParticipants.map((participant) => {
+                    const participantChannel =
+                      appState.channels.find(
+                        (channel) => channel.id === participant.channelId,
+                      ) ?? null;
+                    return (
+                      <Card
+                        key={participant.id}
+                        className={`section-card talking-popout-card${participant.status === "live" ? " is-speaking" : ""}`}
+                      >
+                        <Flex align="center" justify="between" gap="3">
+                          <Flex align="center" gap="3">
+                            <Box className="participant-avatar compact-avatar">
+                              <PersonIcon />
+                            </Box>
+                            <Box>
+                              <Text size="2" weight="medium">
+                                {getParticipantDisplayName(
+                                  participant,
+                                  localNicknames,
+                                )}
+                              </Text>
+                              <Text size="1" color="gray">
+                                {participantChannel?.name ?? "No channel"}
+                              </Text>
+                            </Box>
+                          </Flex>
+                          <StatusChip
+                            status={participant.status}
+                            label={getParticipantStatusLabel(participant)}
+                          />
+                        </Flex>
+                      </Card>
+                    );
+                  })}
+                </Flex>
+              ) : (
+                <Card className="section-card talking-popout-card">
+                  <Text size="2" color="gray">
+                    Nobody is connected yet. Once the live roster arrives, the
+                    active speakers will show up here.
+                  </Text>
+                </Card>
+              )}
+            </Flex>
+          </main>
+        </Box>
+      </Theme>
+    );
+  }
 
   return (
-    <Theme accentColor="cyan" grayColor="slate" radius="large" scaling="105%">
-      <Box className="subtle-grid" style={{ minHeight: "100vh" }}>
-        <main>
+    <Theme
+      appearance="dark"
+      accentColor="cyan"
+      grayColor="slate"
+      radius="large"
+      scaling="100%"
+    >
+      <Box
+        className="subtle-grid app-shell"
+        style={{ ...themeVariables, minHeight: "100vh" }}
+      >
+        <main className="app-main">
           <audio ref={outputPreviewRef} preload="none" />
-          <Flex direction="column" gap="6">
-            <Card className="hero-card fade-in">
+          <Flex direction="column" gap="4">
+            <Card className="hero-card compact-panel fade-in">
               <Flex
                 direction={{ initial: "column", md: "row" }}
-                gap="5"
+                gap="4"
                 align="start"
               >
                 <Box style={{ flex: 1 }}>
-                  <Flex direction="column" gap="3">
-                    <Badge size="2" variant="solid" className="pulse">
-                      desktop session shell
+                  <Flex direction="column" gap="2">
+                    <Badge size="1" variant="solid" className="pulse">
+                      ultracompact desktop shell
                     </Badge>
-                    <Heading size="8">Mumble desktop client</Heading>
-                    <Text size="3" color="gray">
-                      Connect to a server, switch channels, and manage audio
-                      without leaving the renderer.
+                    <Heading size="6">Mumble desktop client</Heading>
+                    <Text size="2" color="gray">
+                      Dense room controls, dark styling, and a talking popout
+                      for live sessions.
                     </Text>
                     <form
                       onSubmit={(event) => {
@@ -1897,9 +2025,9 @@ export function App() {
                         void connectToServer();
                       }}
                     >
-                      <Flex gap="3" wrap="wrap" align="center">
+                      <Flex gap="2" wrap="wrap" align="center">
                         <TextField.Root
-                          size="3"
+                          size="2"
                           placeholder="Server address"
                           style={{ minWidth: 240 }}
                           value={serverAddress}
@@ -1921,7 +2049,7 @@ export function App() {
                           ))}
                         </datalist>
                         <TextField.Root
-                          size="3"
+                          size="2"
                           placeholder="Nickname"
                           style={{ minWidth: 200 }}
                           value={nickname}
@@ -1937,7 +2065,7 @@ export function App() {
                           </TextField.Slot>
                         </TextField.Root>
                         <Button
-                          size="3"
+                          size="2"
                           type="submit"
                           disabled={isConnectionBusy(
                             appState.connection.status,
@@ -1950,7 +2078,7 @@ export function App() {
                               : "Join voice"}
                         </Button>
                         <Button
-                          size="3"
+                          size="2"
                           variant="outline"
                           type="button"
                           onClick={() => {
@@ -1964,7 +2092,7 @@ export function App() {
                           Save server
                         </Button>
                         <Button
-                          size="3"
+                          size="2"
                           variant="outline"
                           type="button"
                           onClick={saveFavoriteServer}
@@ -1976,7 +2104,7 @@ export function App() {
                           Add favorite
                         </Button>
                         <Button
-                          size="3"
+                          size="2"
                           variant="soft"
                           type="button"
                           onClick={() => {
@@ -2079,7 +2207,7 @@ export function App() {
                         </Flex>
                       ) : null}
                     </form>
-                    <Flex gap="3" align="center" wrap="wrap">
+                    <Flex gap="2" align="center" wrap="wrap">
                       <StatusChip
                         status={
                           appState.connection.status === "connected"
@@ -2138,7 +2266,35 @@ export function App() {
                           label={`${appState.telemetry.jitterMs} ms jitter`}
                         />
                       ) : null}
+                      <Button
+                        size="1"
+                        variant="soft"
+                        type="button"
+                        onClick={importBase16Theme}
+                      >
+                        Import Base16
+                      </Button>
+                      {importedTheme ? (
+                        <Button
+                          size="1"
+                          variant="ghost"
+                          type="button"
+                          onClick={resetImportedTheme}
+                        >
+                          Reset theme
+                        </Button>
+                      ) : null}
                     </Flex>
+                    {themeMessage ? (
+                      <Text size="1" color="gray">
+                        Theme: {themeMessage}
+                      </Text>
+                    ) : null}
+                    {themeError ? (
+                      <Text size="1" color="ruby">
+                        {themeError}
+                      </Text>
+                    ) : null}
                     {connectionError &&
                     connectionRecovery &&
                     dismissedConnectionErrorKey !== connectionErrorKey ? (
@@ -2206,7 +2362,7 @@ export function App() {
                     ) : null}
                   </Flex>
                 </Box>
-                <Card className="section-card" style={{ minWidth: 300 }}>
+                <Card className="section-card compact-panel" style={{ minWidth: 300 }}>
                   <Flex direction="column" gap="3">
                     <SectionHeader
                       title="Audio devices"
@@ -2445,16 +2601,12 @@ export function App() {
               </Flex>
             </Card>
 
-            <Grid columns={{ initial: "1", md: "2" }} gap="6">
-              <Card className="section-card fade-in delay-1">
+            <Grid columns={{ initial: "1", md: "2" }} gap="4">
+              <Card className="section-card compact-panel fade-in delay-1">
                 <Flex direction="column" gap="4">
                   <SectionHeader
                     title="Channels"
-                    subtitle={
-                      activeChannel
-                        ? `Selected room: ${activeChannel.name}${selfParticipantChannel ? ` · joined in ${selfParticipantChannel.name}` : ""}${!activeChannel.permissions.enter ? " · no entry" : ""}`
-                        : "Join a server to browse rooms"
-                    }
+                    subtitle={channelsSubtitle}
                   />
                   {appState.channels.length > 0 ? (
                     <Flex direction="column" gap="2">
@@ -2477,6 +2629,7 @@ export function App() {
                         return (
                           <Flex key={channel.id} gap="2" align="stretch">
                             <Button
+                              className={`channel-row-button${isActive ? " is-active" : ""}`}
                               variant={isActive ? "solid" : "soft"}
                               color={isActive ? "cyan" : undefined}
                               style={{
@@ -2550,14 +2703,22 @@ export function App() {
                 </Flex>
               </Card>
 
-              <Card className="section-card fade-in delay-1">
+              <Card className="section-card compact-panel fade-in delay-1">
                 <Flex direction="column" gap="4">
                   <SectionHeader
                     title="Participants"
-                    subtitle={
-                      activeChannel
-                        ? `${activeParticipants.length} in ${activeChannel.name}${selfParticipantChannel && selfParticipantChannel.id !== activeChannel.id ? ` · You are in ${selfParticipantChannel.name}` : ""}`
-                        : "Live session roster"
+                    subtitle={participantsSubtitle}
+                    action={
+                      <Button
+                        size="1"
+                        variant="soft"
+                        onClick={() => {
+                          void openTalkingPopout();
+                        }}
+                      >
+                        <OpenInNewWindowIcon />
+                        Popout
+                      </Button>
                     }
                   />
                   {activeParticipants.length > 0 ? (
@@ -2580,6 +2741,7 @@ export function App() {
                             );
                         return (
                           <Button
+                            className="participant-row-button"
                             key={participant.id}
                             type="button"
                             variant={
@@ -2605,6 +2767,7 @@ export function App() {
                             >
                               <Flex align="center" gap="3">
                                 <Box
+                                  className="participant-avatar compact-avatar"
                                   style={{
                                     width: 38,
                                     height: 38,

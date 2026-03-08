@@ -16,6 +16,7 @@ export const APP_API_WHITELIST = Object.freeze([
   "platform",
   "runSecureVoiceSelfTest",
   "getState",
+  "openTalkingPopout",
   "connect",
   "rememberServer",
   "disconnect",
@@ -40,6 +41,7 @@ export const VOICE_API_WHITELIST = Object.freeze([
 export const APP_INVOKE_CHANNELS = Object.freeze({
   runSecureVoiceSelfTest: "voice:run-self-test",
   getState: "app:get-state",
+  openTalkingPopout: "app:open-talking-popout",
   connect: "app:connect",
   rememberServer: "app:remember-server",
   disconnect: "app:disconnect",
@@ -107,6 +109,7 @@ export type PreloadAppApi = Readonly<{
   platform: NodeJS.Platform;
   runSecureVoiceSelfTest: () => Promise<unknown>;
   getState: () => Promise<AppClientState>;
+  openTalkingPopout: () => Promise<void>;
   connect: (options: {
     serverAddress: string;
     nickname: string;
@@ -237,6 +240,9 @@ export const createPreloadApi = (
     runSecureVoiceSelfTest: () =>
       invoke(ipcRenderer, APP_INVOKE_CHANNELS.runSecureVoiceSelfTest),
     getState: () => invoke(ipcRenderer, APP_INVOKE_CHANNELS.getState),
+    openTalkingPopout: async () => {
+      await invoke(ipcRenderer, APP_INVOKE_CHANNELS.openTalkingPopout);
+    },
     connect: (options) =>
       invoke(ipcRenderer, APP_INVOKE_CHANNELS.connect, options),
     rememberServer: (serverAddress) =>
