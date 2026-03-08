@@ -520,7 +520,11 @@ export class MumbleSessionManager {
     const activeConnection = this.#bindActiveConnection(channel);
 
     try {
-      await channel.connect(parsedAddress);
+      await channel.connect({
+        ...parsedAddress,
+        secure: true,
+        rejectUnauthorized: false
+      });
       await channel.send({
         type: TCPMessageType.Version,
         payload: encodeVersionPayload()
