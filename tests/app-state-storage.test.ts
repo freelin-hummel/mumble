@@ -44,6 +44,7 @@ test("desktop settings persist across restart via the app state storage file", a
     firstRunStore.updatePreferences({
       pushToTalk: true,
       pushToTalkShortcut: "v",
+      shortcutBindings: [{ target: "toggleMute", shortcut: "m" }],
       autoReconnect: false,
       notificationsEnabled: false,
       showLatencyDetails: true
@@ -73,6 +74,7 @@ test("desktop settings persist across restart via the app state storage file", a
     assert.deepEqual(restartedState.preferences, {
       pushToTalk: true,
       pushToTalkShortcut: "KeyV",
+      shortcutBindings: [{ target: "toggleMute", shortcut: "KeyM" }],
       autoReconnect: false,
       notificationsEnabled: false,
       showLatencyDetails: true
@@ -99,6 +101,7 @@ test("loadPersistedAppClientState migrates legacy settings files without losing 
       preferences: {
         pushToTalk: true,
         pushToTalkShortcut: "v",
+        shortcutBindings: [{ target: "toggleLatencyDetails", shortcut: "l" }],
         autoReconnect: false,
         notificationsEnabled: false,
         showLatencyDetails: true
@@ -121,6 +124,7 @@ test("loadPersistedAppClientState migrates legacy settings files without losing 
       preferences: {
         pushToTalk: true,
         pushToTalkShortcut: "KeyV",
+        shortcutBindings: [{ target: "toggleLatencyDetails", shortcut: "KeyL" }],
         autoReconnect: false,
         notificationsEnabled: false,
         showLatencyDetails: true

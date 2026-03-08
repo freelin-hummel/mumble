@@ -24,6 +24,7 @@ test("AppClientStore hydrates persisted desktop preferences", () => {
       preferences: {
         pushToTalk: true,
         pushToTalkShortcut: "KeyV",
+        shortcutBindings: [{ target: "toggleMute", shortcut: "m" }],
         autoReconnect: false,
         notificationsEnabled: false,
         showLatencyDetails: true
@@ -40,6 +41,7 @@ test("AppClientStore hydrates persisted desktop preferences", () => {
   assert.equal(state.audio.inputDeviceId, "usb-mic");
   assert.equal(state.audio.outputDeviceId, "usb-headset");
   assert.equal(state.preferences.pushToTalkShortcut, "KeyV");
+  assert.deepEqual(state.preferences.shortcutBindings, [{ target: "toggleMute", shortcut: "KeyM" }]);
   assert.equal(state.preferences.showLatencyDetails, true);
 });
 
@@ -110,6 +112,12 @@ test("AppClientStore normalizes invalid push-to-talk shortcuts back to the defau
       preferences: {
         pushToTalk: true,
         pushToTalkShortcut: "",
+        shortcutBindings: [
+          { target: "toggleMute", shortcut: "m" },
+          { target: "toggleMute", shortcut: "KeyN" },
+          { target: "toggleLatencyDetails", shortcut: "l" },
+          { target: "invalid", shortcut: "KeyQ" }
+        ],
         autoReconnect: true,
         notificationsEnabled: true,
         showLatencyDetails: false
@@ -119,6 +127,10 @@ test("AppClientStore normalizes invalid push-to-talk shortcuts back to the defau
   });
 
   assert.equal(store.getState().preferences.pushToTalkShortcut, "Space");
+  assert.deepEqual(store.getState().preferences.shortcutBindings, [
+    { target: "toggleMute", shortcut: "KeyM" },
+    { target: "toggleLatencyDetails", shortcut: "KeyL" }
+  ]);
   assert.equal(store.updatePreferences({ pushToTalkShortcut: "m" }).preferences.pushToTalkShortcut, "KeyM");
 });
 
@@ -138,6 +150,7 @@ test("migratePersistedAppClientState upgrades legacy desktop settings snapshots 
     preferences: {
       pushToTalk: true,
       pushToTalkShortcut: "v",
+      shortcutBindings: [{ target: "cycleChannel", shortcut: "r" }],
       autoReconnect: false,
       notificationsEnabled: false,
       showLatencyDetails: true
@@ -160,6 +173,7 @@ test("migratePersistedAppClientState upgrades legacy desktop settings snapshots 
     preferences: {
       pushToTalk: true,
       pushToTalkShortcut: "KeyV",
+      shortcutBindings: [{ target: "cycleChannel", shortcut: "KeyR" }],
       autoReconnect: false,
       notificationsEnabled: false,
       showLatencyDetails: true
@@ -182,7 +196,8 @@ test("AppClientStore persists versioned settings snapshots", () => {
   });
   store.updatePreferences({
     pushToTalk: true,
-    pushToTalkShortcut: "KeyV"
+    pushToTalkShortcut: "KeyV",
+    shortcutBindings: [{ target: "toggleMute", shortcut: "KeyM" }]
   });
 
   assert.deepEqual(persistedStates.at(-1), {
@@ -201,6 +216,7 @@ test("AppClientStore persists versioned settings snapshots", () => {
     preferences: {
       pushToTalk: true,
       pushToTalkShortcut: "KeyV",
+      shortcutBindings: [{ target: "toggleMute", shortcut: "KeyM" }],
       autoReconnect: true,
       notificationsEnabled: true,
       showLatencyDetails: false
