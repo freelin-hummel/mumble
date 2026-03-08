@@ -97,7 +97,10 @@ export const testingGaps = [
       "Before this review, the root Electron test suite did not verify that every legacy screen had been accounted for in the new client's parity assessment.",
     nextStep:
       "Keep tests/parity-review.test.ts aligned with legacy/clients/web-client/src/features.js whenever the legacy baseline or renderer scope changes.",
-    evidence: ["legacy/clients/web-client/tests/web-client.test.mjs:35-58", "tests/"]
+    evidence: [
+      "legacy/clients/web-client/tests/web-client.test.mjs:35-58",
+      "tests/parity-review.test.ts:13-19"
+    ]
   },
   {
     area: "Renderer UI behavior",
