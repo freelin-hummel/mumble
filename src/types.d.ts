@@ -67,9 +67,15 @@ declare global {
     outputGain: number;
   }
 
+  interface AppClientShortcutBinding {
+    shortcut: string;
+    target: "toggleMute" | "selectSystemOutput" | "toggleLatencyDetails" | "cycleChannel";
+  }
+
   interface AppClientPreferences {
     pushToTalk: boolean;
     pushToTalkShortcut: string;
+    shortcutBindings: AppClientShortcutBinding[];
     autoReconnect: boolean;
     notificationsEnabled: boolean;
     showLatencyDetails: boolean;

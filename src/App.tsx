@@ -45,6 +45,12 @@ import {
   setDspFeature
 } from "./dspPipeline.mjs";
 import {
+  findNextShortcutTarget,
+  getDefaultShortcutBinding,
+  getShortcutTargetOption,
+  shortcutTargetOptions
+} from "./shortcutBindings";
+import {
   createInitialVoiceActivationState,
   DEFAULT_PUSH_TO_TALK_SHORTCUT,
   DEFAULT_VAD_START_THRESHOLD,
@@ -77,6 +83,7 @@ const fallbackAppState: AppClientState = {
   preferences: {
     pushToTalk: false,
     pushToTalkShortcut: DEFAULT_PUSH_TO_TALK_SHORTCUT,
+    shortcutBindings: [],
     autoReconnect: true,
     notificationsEnabled: true,
     showLatencyDetails: false
@@ -713,6 +720,7 @@ export function App() {
     () => formatPushToTalkShortcut(appState.preferences.pushToTalkShortcut),
     [appState.preferences.pushToTalkShortcut]
   );
+  const shortcutBindings = appState.preferences.shortcutBindings;
   const connectionRecovery = useMemo(() => {
     if (!connectionError) {
       return null;
@@ -835,6 +843,71 @@ export function App() {
     }
   };
 
+  const updateShortcutBindings = useCallback((nextShortcutBindings: AppClientShortcutBinding[]) => {
+    void updatePreferences({ shortcutBindings: nextShortcutBindings });
+  }, [updatePreferences]);
+
+  const addShortcutBinding = useCallback(() => {
+    const nextTarget = findNextShortcutTarget(shortcutBindings);
+    if (!nextTarget) {
+      return;
+    }
+
+    updateShortcutBindings([
+      ...shortcutBindings,
+      getDefaultShortcutBinding(nextTarget)
+    ]);
+  }, [shortcutBindings, updateShortcutBindings]);
+
+  const removeShortcutBinding = useCallback((bindingTarget: AppClientShortcutBinding["target"]) => {
+    updateShortcutBindings(shortcutBindings.filter((binding) => binding.target !== bindingTarget));
+  }, [shortcutBindings, updateShortcutBindings]);
+
+  const updateShortcutBindingTarget = useCallback((
+    bindingTarget: AppClientShortcutBinding["target"],
+    nextTarget: AppClientShortcutBinding["target"]
+  ) => {
+    updateShortcutBindings(shortcutBindings.map((binding) => (
+      binding.target === bindingTarget
+        ? { ...binding, target: nextTarget }
+        : binding
+    )));
+  }, [shortcutBindings, updateShortcutBindings]);
+
+  const updateShortcutBindingShortcut = useCallback((
+    bindingTarget: AppClientShortcutBinding["target"],
+    nextShortcut: string
+  ) => {
+    updateShortcutBindings(shortcutBindings.map((binding) => (
+      binding.target === bindingTarget
+        ? { ...binding, shortcut: nextShortcut }
+        : binding
+    )));
+  }, [shortcutBindings, updateShortcutBindings]);
+
+  const handleShortcutAction = useCallback(async (target: AppClientShortcutBinding["target"]) => {
+    switch (target) {
+      case "toggleMute":
+        await updateAudioSettings({ selfMuted: !appState.audio.selfMuted });
+        break;
+      case "selectSystemOutput":
+        await updateAudioSettings({ outputDeviceId: SYSTEM_DEFAULT_DEVICE_ID });
+        break;
+      case "toggleLatencyDetails":
+        await updatePreferences({ showLatencyDetails: !appState.preferences.showLatencyDetails });
+        break;
+      case "cycleChannel":
+        await cycleChannel();
+        break;
+    }
+  }, [
+    appState.audio.selfMuted,
+    appState.preferences.showLatencyDetails,
+    cycleChannel,
+    updateAudioSettings,
+    updatePreferences
+  ]);
+
   const exportDiagnostics = async () => {
     if (!window.app?.exportDiagnostics || isExportingDiagnostics) {
       return;
@@ -870,6 +943,43 @@ export function App() {
       setIsExportingDiagnostics(false);
     }
   };
+
+  useEffect(() => {
+    if (shortcutBindings.length === 0) {
+      return undefined;
+    }
+
+    const reservedShortcut = appState.preferences.pushToTalk
+      ? appState.preferences.pushToTalkShortcut
+      : null;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.repeat || isEditableTarget(event.target)) {
+        return;
+      }
+
+      const matchedBinding = shortcutBindings.find((binding) => (
+        (reservedShortcut === null || binding.shortcut !== reservedShortcut)
+        && matchesPushToTalkShortcut(binding.shortcut, event)
+      ));
+
+      if (!matchedBinding) {
+        return;
+      }
+
+      event.preventDefault();
+      void handleShortcutAction(matchedBinding.target);
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [
+    appState.preferences.pushToTalk,
+    appState.preferences.pushToTalkShortcut,
+    handleShortcutAction,
+    shortcutBindings
+  ]);
 
   const openDiagnostics = () => {
     if (!appState.preferences.showLatencyDetails) {
@@ -1581,6 +1691,121 @@ export function App() {
                       <Text size="1" color="gray">
                         Focus the shortcut field and press any key to set it as your push-to-talk shortcut. Press Backspace or Delete to reset to Space. Current switch state: {pushToTalkPressed ? "Held" : "Released"}.
                       </Text>
+                      <Flex direction="column" gap="3">
+                        <Box>
+                          <Text size="2">Shortcut targets</Text>
+                          <Text size="1" color="gray">
+                            Add renderer shortcuts for quick actions like mute, diagnostics, output routing, and room cycling.
+                          </Text>
+                        </Box>
+                        {shortcutBindings.length === 0 ? (
+                          <Text size="1" color="gray">
+                            No quick-action shortcuts configured yet. Add one to capture a key and route it to an existing quick action.
+                          </Text>
+                        ) : shortcutBindings.map((binding) => {
+                          const targetOption = getShortcutTargetOption(binding.target);
+
+                          return (
+                            <Card key={binding.target} className="section-card">
+                              <Flex direction="column" gap="3">
+                                <Grid columns={{ initial: "1", md: "2" }} gap="3">
+                                  <label className="device-field">
+                                    <Text size="2" color="gray">Target</Text>
+                                    <select
+                                      className="device-select"
+                                      value={binding.target}
+                                      onChange={(event) => {
+                                        updateShortcutBindingTarget(
+                                          binding.target,
+                                          event.target.value as AppClientShortcutBinding["target"]
+                                        );
+                                      }}
+                                    >
+                                      {shortcutTargetOptions.map((option) => (
+                                        <option
+                                          key={option.value}
+                                          value={option.value}
+                                          disabled={option.value !== binding.target && shortcutBindings.some((candidate) => (
+                                            candidate.target === option.value
+                                          ))}
+                                        >
+                                          {option.label}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </label>
+                                  <label className="device-field">
+                                    <Text size="2" color="gray">Shortcut</Text>
+                                    <input
+                                      className="device-select"
+                                      type="text"
+                                      value={formatPushToTalkShortcut(binding.shortcut)}
+                                      readOnly
+                                      onFocus={(event) => {
+                                        event.currentTarget.select();
+                                      }}
+                                      onKeyDown={(event) => {
+                                        event.preventDefault();
+                                        event.stopPropagation();
+
+                                        if (event.key === "Backspace" || event.key === "Delete") {
+                                          updateShortcutBindingShortcut(
+                                            binding.target,
+                                            getDefaultShortcutBinding(binding.target).shortcut
+                                          );
+                                          return;
+                                        }
+
+                                        const nextShortcut = shortcutFromKeyboardEvent(event.nativeEvent);
+                                        if (!nextShortcut) {
+                                          return;
+                                        }
+
+                                        updateShortcutBindingShortcut(binding.target, nextShortcut);
+                                      }}
+                                    />
+                                  </label>
+                                </Grid>
+                                <Flex align="center" justify="between" gap="3" wrap="wrap">
+                                  <Text size="1" color="gray">
+                                    {targetOption?.description ?? "Route the shortcut to a quick action target."}
+                                  </Text>
+                                  <Button
+                                    variant="ghost"
+                                    color="ruby"
+                                    size="2"
+                                    onClick={() => {
+                                      removeShortcutBinding(binding.target);
+                                    }}
+                                  >
+                                    Remove
+                                  </Button>
+                                </Flex>
+                              </Flex>
+                            </Card>
+                          );
+                        })}
+                        <Flex gap="2" wrap="wrap">
+                          <Button
+                            variant="soft"
+                            size="2"
+                            onClick={addShortcutBinding}
+                            disabled={shortcutBindings.length >= shortcutTargetOptions.length}
+                          >
+                            Add shortcut
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="2"
+                            onClick={() => {
+                              updateShortcutBindings([]);
+                            }}
+                            disabled={shortcutBindings.length === 0}
+                          >
+                            Clear all
+                          </Button>
+                        </Flex>
+                      </Flex>
                       <Flex align="center" justify="between" gap="3">
                         <Box>
                           <Text size="2">Auto reconnect</Text>

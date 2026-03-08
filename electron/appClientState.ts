@@ -2,6 +2,11 @@ import {
   DEFAULT_PUSH_TO_TALK_SHORTCUT,
   normalizePushToTalkShortcut
 } from "../src/voiceActivation.js";
+import {
+  normalizeShortcutBindings,
+  type AppClientShortcutBinding,
+  type AppClientShortcutTarget
+} from "../src/shortcutBindings.js";
 
 export type AppClientConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
 export type AppClientParticipantStatus = "live" | "muted" | "idle";
@@ -54,6 +59,7 @@ export type AppClientAudioSettings = {
 export type AppClientPreferences = {
   pushToTalk: boolean;
   pushToTalkShortcut: string;
+  shortcutBindings: AppClientShortcutBinding[];
   autoReconnect: boolean;
   notificationsEnabled: boolean;
   showLatencyDetails: boolean;
@@ -173,6 +179,7 @@ const defaultAudioSettings = Object.freeze<AppClientAudioSettings>({
 const defaultPreferences = Object.freeze<AppClientPreferences>({
   pushToTalk: false,
   pushToTalkShortcut: DEFAULT_PUSH_TO_TALK_SHORTCUT,
+  shortcutBindings: [],
   autoReconnect: true,
   notificationsEnabled: true,
   showLatencyDetails: false
@@ -463,6 +470,7 @@ const normalizePreferences = (preferences?: Partial<AppClientPreferences> | null
     ? preferences.pushToTalk
     : defaultPreferences.pushToTalk,
   pushToTalkShortcut: normalizePushToTalkShortcut(preferences?.pushToTalkShortcut),
+  shortcutBindings: normalizeShortcutBindings(preferences?.shortcutBindings),
   autoReconnect: typeof preferences?.autoReconnect === "boolean"
     ? preferences.autoReconnect
     : defaultPreferences.autoReconnect,
@@ -518,6 +526,8 @@ export const createPersistedAppClientState = (state: AppClientState): PersistedA
   audio: cloneState(state.audio),
   preferences: cloneState(state.preferences)
 });
+
+export type { AppClientShortcutBinding, AppClientShortcutTarget };
 
 const createDisconnectedState = (persistedState?: PersistedAppClientState | null): AppClientState => ({
   connection: {

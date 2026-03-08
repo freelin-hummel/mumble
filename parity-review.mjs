@@ -46,10 +46,14 @@ export const legacyParityGroups = [
   {
     group: "Shortcuts",
     summary:
-      "The current push-to-talk shortcut field is renderer-local and only covers one binding, so the dedicated legacy shortcut management flows remain missing for parity purposes.",
-    partiallyCoveredLegacyScreenIds: [],
-    missingLegacyScreenIds: ["global-shortcut", "global-shortcut-buttons", "global-shortcut-target"],
-    evidence: ["src/App.tsx:1465-1509"]
+      "The renderer now includes a lightweight shortcut manager with add/remove controls, editable quick-action bindings, and per-binding target routing, but it still remains renderer-local and does not yet match the legacy client's richer global capture and assignment workflow.",
+    partiallyCoveredLegacyScreenIds: ["global-shortcut", "global-shortcut-buttons", "global-shortcut-target"],
+    missingLegacyScreenIds: [],
+    evidence: [
+      "src/App.tsx:846-982",
+      "src/App.tsx:1647-1807",
+      "tests/shortcut-bindings.test.ts:11-36"
+    ]
   },
   {
     group: "Administration",
