@@ -237,7 +237,7 @@ export function getNextLegacyParityWorkItem() {
   };
 }
 
-export function getLegacyParityPullRequestSummary() {
+export function getLegacyParityPrSummary() {
   const summary = getLegacyParitySummary();
   const nextWorkItem = getNextLegacyParityWorkItem();
   const activeCoverage = legacyParityGroups
@@ -270,12 +270,12 @@ export function getLegacyParityPullRequestSummary() {
   return lines.join("\n");
 }
 
-export const getLegacyParityPrSummary = getLegacyParityPullRequestSummary;
+export const getLegacyParityPullRequestSummary = getLegacyParityPrSummary;
 
 const isDirectExecution =
   typeof process.argv[1] === "string" &&
   import.meta.url === pathToFileURL(process.argv[1]).href;
 
 if (isDirectExecution) {
-  console.log(getLegacyParityPullRequestSummary());
+  console.log(getLegacyParityPrSummary());
 }
