@@ -7,3 +7,4 @@ export {
   isTCPMessageType,
   type ProtobufControlMessage
 } from "./types.js";
+export { MumbleSessionManager, parseServerAddress } from "./session-manager.js";

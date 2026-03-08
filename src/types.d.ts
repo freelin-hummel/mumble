@@ -89,7 +89,7 @@ declare global {
   }
 
   interface AppClientConnectionState {
-    status: "disconnected" | "connecting" | "connected" | "error";
+    status: "disconnected" | "connecting" | "authenticating" | "connected" | "error";
     serverAddress: string;
     nickname: string;
     error: string | null;

@@ -135,9 +135,14 @@ const CHANNEL_INDENT_PER_LEVEL = 16;
 const statusCopy: Record<AppClientConnectionState["status"], string> = {
   disconnected: "Disconnected",
   connecting: "Connecting…",
+  authenticating: "Authenticating…",
   connected: "Connected",
   error: "Needs attention"
 };
+
+const isConnectionBusy = (status: AppClientConnectionState["status"]) => (
+  status === "connecting" || status === "authenticating"
+);
 
 const buildRecentServers = (recentServers: string[], serverAddress: string) => {
   const normalizedAddress = serverAddress.trim();
@@ -1156,7 +1161,7 @@ export function App() {
                           onChange={(event) => {
                             setServerAddress(event.target.value);
                           }}
-                          disabled={appState.connection.status === "connecting"}
+                          disabled={isConnectionBusy(appState.connection.status)}
                           list="recent-servers"
                         >
                           <TextField.Slot>
@@ -1176,14 +1181,18 @@ export function App() {
                           onChange={(event) => {
                             setNickname(event.target.value);
                           }}
-                          disabled={appState.connection.status === "connecting"}
+                          disabled={isConnectionBusy(appState.connection.status)}
                         >
                           <TextField.Slot>
                             <ChatBubbleIcon />
                           </TextField.Slot>
                         </TextField.Root>
-                        <Button size="3" type="submit" disabled={appState.connection.status === "connecting"}>
-                          {appState.connection.status === "connecting" ? "Joining…" : "Join voice"}
+                        <Button size="3" type="submit" disabled={isConnectionBusy(appState.connection.status)}>
+                          {appState.connection.status === "authenticating"
+                            ? "Authenticating…"
+                            : appState.connection.status === "connecting"
+                              ? "Joining…"
+                              : "Join voice"}
                         </Button>
                         <Button
                           size="3"
@@ -1192,7 +1201,7 @@ export function App() {
                           onClick={() => {
                             void rememberServer(serverAddress);
                           }}
-                          disabled={appState.connection.status === "connecting" || trimmedServerAddress.length === 0}
+                          disabled={isConnectionBusy(appState.connection.status) || trimmedServerAddress.length === 0}
                         >
                           Save server
                         </Button>
@@ -1222,7 +1231,7 @@ export function App() {
                               onClick={() => {
                                 loadRecentServer(recentServer);
                               }}
-                              disabled={appState.connection.status === "connecting"}
+                              disabled={isConnectionBusy(appState.connection.status)}
                             >
                               {recentServer}
                             </Button>
@@ -1267,7 +1276,7 @@ export function App() {
                               onClick={() => {
                                 void connectToServer();
                               }}
-                              disabled={appState.connection.status === "connecting"}
+                              disabled={isConnectionBusy(appState.connection.status)}
                             >
                               Retry connection
                             </Button>
@@ -1526,7 +1535,7 @@ export function App() {
                     </Flex>
                   ) : (
                     <Text size="2" color="gray">
-                      {appState.connection.status === "connecting"
+                      {isConnectionBusy(appState.connection.status)
                         ? "Loading channel tree…"
                         : "No rooms yet. Connect to a server to load the current channel list."}
                     </Text>
@@ -1586,7 +1595,9 @@ export function App() {
                     <Text size="2" color="gray">
                       {appState.connection.status === "connected"
                         ? "Nobody is in the active room yet."
-                        : "Disconnected. Participant presence appears here once the session is live."}
+                        : isConnectionBusy(appState.connection.status)
+                          ? "Waiting for the live roster…"
+                          : "Disconnected. Participant presence appears here once the session is live."}
                     </Text>
                   )}
                   {selectedParticipant ? (

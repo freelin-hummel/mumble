@@ -8,7 +8,7 @@ import {
   type AppClientShortcutTarget
 } from "../src/shortcutBindings.js";
 
-export type AppClientConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
+export type AppClientConnectionStatus = "disconnected" | "connecting" | "authenticating" | "connected" | "error";
 export type AppClientParticipantStatus = "live" | "muted" | "idle";
 
 export type AppClientChannelPermissions = {
@@ -114,7 +114,12 @@ type AppClientStoreOptions = {
   persistedState?: unknown | null;
   onPersist?: (state: PersistedAppClientState) => void;
   onLog?: (event: AppClientLogEvent) => void;
-  waitForConnection?: () => Promise<void>;
+  waitForConnection?: (
+    request: AppClientConnectRequest,
+    controls: {
+      setAuthenticating: () => void;
+    }
+  ) => Promise<AppClientLiveSession | void>;
 };
 
 export type AppClientConnectRequest = {
@@ -732,13 +737,13 @@ export class AppClientStore {
   private readonly listeners = new Set<AppClientListener>();
   private readonly onPersist?: (state: PersistedAppClientState) => void;
   private readonly onLog?: (event: AppClientLogEvent) => void;
-  private readonly waitForConnection: () => Promise<void>;
+  private readonly waitForConnection: NonNullable<AppClientStoreOptions["waitForConnection"]>;
 
   public constructor({ persistedState, onPersist, onLog, waitForConnection }: AppClientStoreOptions = {}) {
     this.state = createDisconnectedState(migratePersistedAppClientState(persistedState));
     this.onPersist = onPersist;
     this.onLog = onLog;
-    this.waitForConnection = waitForConnection ?? (() => new Promise((resolve) => {
+    this.waitForConnection = waitForConnection ?? (async () => new Promise<void>((resolve) => {
       setTimeout(resolve, 250);
     }));
   }
@@ -769,7 +774,18 @@ export class AppClientStore {
         },
         recentServers: buildRecentServers(currentState.recentServers, normalizedRequest.serverAddress)
       }));
-      await this.waitForConnection();
+      const liveSession = await this.waitForConnection(normalizedRequest, {
+        setAuthenticating: () => {
+          this.updateState((currentState) => ({
+            ...currentState,
+            connection: {
+              ...currentState.connection,
+              status: "authenticating",
+              error: null
+            }
+          }));
+        }
+      });
       this.updateState((currentState) => ({
         ...currentState,
         connection: {
@@ -783,6 +799,9 @@ export class AppClientStore {
         messages: [],
         telemetry: cloneState(defaultTelemetry)
       }));
+      if (liveSession) {
+        this.syncLiveSession(liveSession);
+      }
       this.log("info", "connection.connect.succeeded", {
         serverAddress: normalizedRequest.serverAddress
       });
@@ -836,6 +855,29 @@ export class AppClientStore {
         ...currentState.connection,
         status: "disconnected",
         error: null
+      },
+      channels: [],
+      activeChannelId: null,
+      participants: [],
+      messages: [],
+      telemetry: cloneState(defaultTelemetry)
+    }));
+    return this.getState();
+  }
+
+  public failConnection(message: string) {
+    const normalizedMessage = message.trim() || "Unable to connect right now.";
+    this.log("error", "connection.lifecycle.failed", {
+      serverAddress: this.state.connection.serverAddress,
+      nickname: this.state.connection.nickname,
+      error: normalizedMessage
+    });
+    this.updateState((currentState) => ({
+      ...currentState,
+      connection: {
+        ...currentState.connection,
+        status: "error",
+        error: normalizedMessage
       },
       channels: [],
       activeChannelId: null,
