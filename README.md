@@ -30,6 +30,21 @@ npm run build
 npm test
 ```
 
+## OpenSpec workflow
+
+This repository is set up for [OpenSpec](https://github.com/Fission-AI/OpenSpec) with
+GitHub Copilot prompts and skills under `.github/`, plus tracked `openspec/changes/`
+and `openspec/specs/` directories for future change proposals and archived work.
+
+To initialize the same scaffolding in another clone of this repository, run:
+
+```bash
+npx -y @fission-ai/openspec@latest init --tools github-copilot
+```
+
+If you already have the CLI installed globally, use `/opsx:propose "<idea>"` inside
+GitHub Copilot Chat to create the next change proposal for this project.
+
 ## Packaging
 
 This project uses **electron-builder** for packaging because it fits the current Electron + Vite + React split with minimal extra setup and can emit native artifacts for macOS, Windows, and Linux from the same build output.
