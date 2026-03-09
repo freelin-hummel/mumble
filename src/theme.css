@@ -55,7 +55,7 @@ main {
 
 .section-card {
   border: 1px solid rgb(var(--app-border-strong-rgb) / 0.55);
-  padding: 10px 12px;
+  padding: 8px 10px;
 }
 
 .app-shell,
@@ -69,7 +69,7 @@ main {
 }
 
 .legacy-main-window {
-  max-width: 1280px;
+  max-width: 680px;
 }
 
 .legacy-window-frame {
@@ -80,6 +80,7 @@ main {
 .legacy-toolbar,
 .legacy-connect-strip,
 .legacy-server-strip,
+.legacy-session-strip,
 .legacy-minimal-note {
   border: 1px solid rgb(var(--app-border-rgb) / 0.55);
   background: linear-gradient(
@@ -113,11 +114,25 @@ main {
 }
 
 .legacy-connect-strip {
-  padding: 6px 8px;
+  padding: 4px 6px;
 }
 
 .legacy-server-strip {
-  padding: 4px 8px;
+  padding: 3px 6px;
+}
+
+.legacy-session-strip {
+  padding: 4px 6px;
+}
+
+.legacy-connect-field {
+  flex: 1 1 220px;
+  min-width: 180px;
+}
+
+.legacy-nickname-field {
+  flex: 0 1 160px;
+  min-width: 140px;
 }
 
 .legacy-inline-alert {
@@ -125,7 +140,7 @@ main {
 }
 
 .legacy-tree-panel {
-  min-height: 230px;
+  min-height: 180px;
 }
 
 .legacy-tree-panel .rt-CardInner,
@@ -149,68 +164,36 @@ main {
   overflow: visible;
 }
 
-.legacy-dock-panel-shell {
-  position: relative;
-  min-height: 280px;
-}
-
-.legacy-dock-panel-shell.is-minimized {
-  min-height: 48px;
-}
-
 .legacy-dock-panel {
-  min-height: 100%;
-  height: 100%;
   position: relative;
   overflow: hidden;
 }
 
 .legacy-dock-panel-header {
-  padding-bottom: 8px;
+  padding-bottom: 4px;
   border-bottom: 1px solid rgb(var(--app-border-rgb) / 0.35);
-  cursor: grab;
+}
+
+.legacy-dock-panel.is-collapsed .legacy-dock-panel-header {
+  padding-bottom: 0;
+  border-bottom: 0;
 }
 
 .legacy-dock-panel-body {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
-  padding-top: 8px;
-}
-
-.legacy-dock-panel-controls {
-  flex-shrink: 0;
-}
-
-.legacy-dock-panel-resize-handle {
-  position: absolute;
-  right: 6px;
-  bottom: 6px;
-  width: 14px;
-  height: 14px;
-  border: 0;
-  background:
-    linear-gradient(135deg, transparent 0 45%, rgb(var(--app-border-rgb) / 0.75) 45% 55%, transparent 55%),
-    linear-gradient(135deg, transparent 0 65%, rgb(var(--app-border-rgb) / 0.75) 65% 75%, transparent 75%);
-  cursor: nwse-resize;
-  opacity: 0.8;
-}
-
-.legacy-dock-panel-resize-handle:hover {
-  opacity: 1;
-}
-
-.legacy-dock-restore-strip {
-  border: 1px solid rgb(var(--app-border-rgb) / 0.55);
-  background: rgb(var(--app-bg-rgb) / 0.4);
-  border-radius: 8px;
-  padding: 4px 8px;
+  padding-top: 4px;
 }
 
 .legacy-log-list {
-  max-height: 220px;
+  max-height: 160px;
   overflow-y: auto;
   padding-right: 4px;
+}
+
+.legacy-chat-log-list {
+  max-height: 180px;
 }
 
 .legacy-log-entry {

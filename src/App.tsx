@@ -14,17 +14,16 @@ import {
 } from "@radix-ui/themes";
 import {
   ChatBubbleIcon,
-  Cross2Icon,
+  ChevronDownIcon,
+  ChevronUpIcon,
   DownloadIcon,
   GlobeIcon,
   LightningBoltIcon,
-  MinusIcon,
   OpenInNewWindowIcon,
   PersonIcon,
   SpeakerOffIcon,
 } from "@radix-ui/react-icons";
 import {
-  type PointerEvent as ReactPointerEvent,
   useCallback,
   useEffect,
   useMemo,
@@ -81,6 +80,10 @@ import {
   getChatViewTarget,
   getUnreadCountForTarget,
 } from "./chatState";
+import {
+  getCompactChatLogMessages,
+  shouldExpandConnectionControls,
+} from "./minimalUi";
 import {
   buildBase16ThemeVariables,
   clearStoredBase16Theme,
@@ -169,73 +172,13 @@ const BASE_CHANNEL_PADDING = 12;
 const CHANNEL_INDENT_PER_LEVEL = 12;
 const PARTICIPANT_INDENT_OFFSET = 18;
 const MAX_ACTIVITY_LOG_MESSAGES = 12;
-const DOCK_PANEL_MIN_WIDTH = 240;
-const DOCK_PANEL_MIN_HEIGHT = 180;
-const DOCK_PANEL_MINIMIZED_HEIGHT = 48;
 const PREFERRED_VOICE_CAPTURE_MIME_TYPES = [
   "audio/webm;codecs=opus",
   "audio/webm",
   "audio/ogg;codecs=opus",
 ] as const;
 
-type DockPanelId = "log" | "chat" | "self";
-
-type DockPanelLayout = {
-  offsetX: number;
-  offsetY: number;
-  width: number | null;
-  height: number;
-  isClosed: boolean;
-  isMinimized: boolean;
-  zIndex: number;
-};
-
-type DockPanelInteraction = {
-  panelId: DockPanelId;
-  mode: "move" | "resize";
-  startClientX: number;
-  startClientY: number;
-  startOffsetX: number;
-  startOffsetY: number;
-  startWidth: number;
-  startHeight: number;
-};
-
-const createInitialDockPanelLayouts = (): Record<DockPanelId, DockPanelLayout> => ({
-  log: {
-    offsetX: 0,
-    offsetY: 0,
-    width: null,
-    height: 300,
-    isClosed: false,
-    isMinimized: false,
-    zIndex: 1,
-  },
-  chat: {
-    offsetX: 0,
-    offsetY: 0,
-    width: null,
-    height: 300,
-    isClosed: false,
-    isMinimized: false,
-    zIndex: 2,
-  },
-  self: {
-    offsetX: 0,
-    offsetY: 0,
-    width: null,
-    height: 300,
-    isClosed: false,
-    isMinimized: false,
-    zIndex: 3,
-  },
-});
-
-const DOCK_PANEL_TITLES: Record<DockPanelId, string> = {
-  log: "Log",
-  chat: "Chatbar",
-  self: "Self / Configure",
-};
+type StackPanelId = "log" | "chat" | "self";
 
 const statusCopy: Record<AppClientConnectionState["status"], string> = {
   disconnected: "Disconnected",
@@ -440,18 +383,18 @@ export function App() {
       ? null
       : loadStoredBase16Theme(window.localStorage),
   );
-  const [dockPanels, setDockPanels] = useState<Record<DockPanelId, DockPanelLayout>>(
-    () => createInitialDockPanelLayouts(),
-  );
-  const [activeDockInteraction, setActiveDockInteraction] =
-    useState<DockPanelInteraction | null>(null);
+  const [isConnectionPanelExpanded, setIsConnectionPanelExpanded] = useState(true);
+  const [isActivityLogExpanded, setIsActivityLogExpanded] = useState(true);
+  const [isChatLogExpanded, setIsChatLogExpanded] = useState(true);
+  const [collapsedStackPanels, setCollapsedStackPanels] = useState<
+    Record<StackPanelId, boolean>
+  >({
+    log: false,
+    chat: false,
+    self: false,
+  });
   const outputPreviewRef = useRef<HTMLAudioElement>(null);
   const diagnosticsSectionRef = useRef<HTMLDivElement>(null);
-  const dockPanelRefs = useRef<Record<DockPanelId, HTMLDivElement | null>>({
-    log: null,
-    chat: null,
-    self: null,
-  });
   const pushToTalkPressedRef = useRef(false);
   const voiceActivationRef = useRef(voiceActivation);
   const voiceCaptureMimeTypeRef = useRef<string | null>(null);
@@ -706,6 +649,12 @@ export function App() {
   useEffect(() => {
     voiceActivationRef.current = voiceActivation;
   }, [voiceActivation]);
+
+  useEffect(() => {
+    setIsConnectionPanelExpanded(
+      shouldExpandConnectionControls(appState.connection.status),
+    );
+  }, [appState.connection.status]);
 
   useEffect(() => {
     setDspPipelineState(
@@ -1822,63 +1771,6 @@ export function App() {
     handleShortcutAction,
     shortcutBindings,
   ]);
-  useEffect(() => {
-    if (!activeDockInteraction) {
-      return undefined;
-    }
-
-    const handlePointerMove = (event: PointerEvent) => {
-      const deltaX = event.clientX - activeDockInteraction.startClientX;
-      const deltaY = event.clientY - activeDockInteraction.startClientY;
-
-      setDockPanels((currentPanels) => ({
-        ...currentPanels,
-        [activeDockInteraction.panelId]: {
-          ...currentPanels[activeDockInteraction.panelId],
-          offsetX:
-            activeDockInteraction.mode === "move"
-              ? activeDockInteraction.startOffsetX + deltaX
-              : currentPanels[activeDockInteraction.panelId].offsetX,
-          offsetY:
-            activeDockInteraction.mode === "move"
-              ? activeDockInteraction.startOffsetY + deltaY
-              : currentPanels[activeDockInteraction.panelId].offsetY,
-          width:
-            activeDockInteraction.mode === "resize"
-              ? Math.max(
-                  DOCK_PANEL_MIN_WIDTH,
-                  activeDockInteraction.startWidth + deltaX,
-                )
-              : currentPanels[activeDockInteraction.panelId].width,
-          height:
-            activeDockInteraction.mode === "resize"
-              ? Math.max(
-                  DOCK_PANEL_MIN_HEIGHT,
-                  activeDockInteraction.startHeight + deltaY,
-                )
-              : currentPanels[activeDockInteraction.panelId].height,
-        },
-      }));
-    };
-    const handlePointerUp = () => {
-      setActiveDockInteraction(null);
-    };
-
-    const previousUserSelect = document.body.style.userSelect;
-    const previousCursor = document.body.style.cursor;
-    document.body.style.userSelect = "none";
-    document.body.style.cursor =
-      activeDockInteraction.mode === "move" ? "grabbing" : "nwse-resize";
-    window.addEventListener("pointermove", handlePointerMove);
-    window.addEventListener("pointerup", handlePointerUp);
-
-    return () => {
-      document.body.style.userSelect = previousUserSelect;
-      document.body.style.cursor = previousCursor;
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", handlePointerUp);
-    };
-  }, [activeDockInteraction]);
 
   const openDiagnostics = () => {
     if (!appState.preferences.showLatencyDetails) {
@@ -1935,91 +1827,6 @@ export function App() {
     setThemeError(null);
     setThemeMessage("Default dark theme restored.");
   }, []);
-  const bringDockPanelToFront = useCallback((panelId: DockPanelId) => {
-    setDockPanels((currentPanels) => {
-      const highestZIndex = Math.max(
-        ...Object.values(currentPanels).map((panel) => panel.zIndex),
-      );
-      if (currentPanels[panelId].zIndex === highestZIndex) {
-        return currentPanels;
-      }
-
-      return {
-        ...currentPanels,
-        [panelId]: {
-          ...currentPanels[panelId],
-          zIndex: highestZIndex + 1,
-        },
-      };
-    });
-  }, []);
-  const closeDockPanel = useCallback((panelId: DockPanelId) => {
-    setDockPanels((currentPanels) => ({
-      ...currentPanels,
-      [panelId]: {
-        ...currentPanels[panelId],
-        isClosed: true,
-      },
-    }));
-  }, []);
-  const restoreDockPanel = useCallback((panelId: DockPanelId) => {
-    bringDockPanelToFront(panelId);
-    setDockPanels((currentPanels) => ({
-      ...currentPanels,
-      [panelId]: {
-        ...currentPanels[panelId],
-        isClosed: false,
-        isMinimized: false,
-      },
-    }));
-  }, [bringDockPanelToFront]);
-  const toggleDockPanelMinimized = useCallback((panelId: DockPanelId) => {
-    bringDockPanelToFront(panelId);
-    setDockPanels((currentPanels) => ({
-      ...currentPanels,
-      [panelId]: {
-        ...currentPanels[panelId],
-        isMinimized: !currentPanels[panelId].isMinimized,
-      },
-    }));
-  }, [bringDockPanelToFront]);
-  const startDockPanelInteraction = useCallback(
-    (
-      panelId: DockPanelId,
-      mode: DockPanelInteraction["mode"],
-      event: ReactPointerEvent<HTMLElement>,
-    ) => {
-      if (
-        event.button !== 0 ||
-        event.altKey ||
-        event.ctrlKey ||
-        event.metaKey ||
-        event.shiftKey
-      ) {
-        return;
-      }
-
-      const panelElement = dockPanelRefs.current[panelId];
-      if (!panelElement) {
-        return;
-      }
-
-      const panel = dockPanels[panelId];
-      bringDockPanelToFront(panelId);
-      setActiveDockInteraction({
-        panelId,
-        mode,
-        startClientX: event.clientX,
-        startClientY: event.clientY,
-        startOffsetX: panel.offsetX,
-        startOffsetY: panel.offsetY,
-        startWidth: panel.width ?? panelElement.getBoundingClientRect().width,
-        startHeight: panel.height,
-      });
-      event.preventDefault();
-    },
-    [bringDockPanelToFront, dockPanels],
-  );
 
   const sendChatMessage = async () => {
     if (!chatDraft.trim()) {
@@ -2144,114 +1951,58 @@ export function App() {
     () => [...appState.messages].slice(-MAX_ACTIVITY_LOG_MESSAGES).reverse(),
     [appState.messages],
   );
+  const compactChatLogMessages = useMemo(
+    () => getCompactChatLogMessages(activeMessages),
+    [activeMessages],
+  );
   const minimalViewNote =
     appState.connection.status === "connected"
       ? `Connected to ${appState.connection.serverAddress || serverAddress || "server"} as ${appState.connection.nickname || nickname || "guest"} · ${participantsSubtitle.toLowerCase()}`
       : "You are currently in minimal view but not connected to a server. Use the toolbar to connect or open the talking popout.";
-  const closedDockPanels = (Object.keys(dockPanels) as DockPanelId[]).filter(
-    (panelId) => dockPanels[panelId].isClosed,
-  );
-  const renderDockPanel = (
-    panelId: DockPanelId,
+  const toggleStackPanelCollapsed = (panelId: StackPanelId) => {
+    setCollapsedStackPanels((currentPanels) => ({
+      ...currentPanels,
+      [panelId]: !currentPanels[panelId],
+    }));
+  };
+  const renderStackPanel = (
+    panelId: StackPanelId,
+    title: string,
     subtitle: string,
     delayClass: string,
     content: JSX.Element,
   ) => {
-    const panel = dockPanels[panelId];
-    if (panel.isClosed) {
-      return null;
-    }
-
-    const title = DOCK_PANEL_TITLES[panelId];
+    const isCollapsed = collapsedStackPanels[panelId];
 
     return (
-      <Box
-        key={panelId}
-        ref={(element) => {
-          dockPanelRefs.current[panelId] = element;
-        }}
-        className={`legacy-dock-panel-shell${panel.isMinimized ? " is-minimized" : ""}`}
-        style={{
-          transform: `translate(${panel.offsetX}px, ${panel.offsetY}px)`,
-          zIndex: panel.zIndex,
-          width: panel.width ? `${panel.width}px` : undefined,
-          height: `${panel.isMinimized ? DOCK_PANEL_MINIMIZED_HEIGHT : panel.height}px`,
-        }}
-        onPointerDown={() => {
-          bringDockPanelToFront(panelId);
-        }}
+      <Card
+        className={`section-card compact-panel legacy-dock-panel fade-in ${delayClass} ${isCollapsed ? "is-collapsed" : ""}`}
       >
-        <Card className={`section-card compact-panel legacy-dock-panel fade-in ${delayClass}`}>
-          <Flex
-            className="legacy-dock-panel-header"
-            align="center"
-            justify="between"
-            gap="2"
-            onPointerDown={(event) => {
-              startDockPanelInteraction(panelId, "move", event);
-            }}
-          >
-            <Flex direction="column" gap="1">
-              <Text size="2" weight="bold">
-                {title}
-              </Text>
-              <Text size="1" color="gray">
-                {subtitle}
-              </Text>
-            </Flex>
-            <Flex align="center" gap="1" className="legacy-dock-panel-controls">
-              <IconButton
-                size="1"
-                variant="ghost"
-                type="button"
-                aria-label={
-                  panel.isMinimized ? `Restore ${title}` : `Minimize ${title}`
-                }
-                onPointerDown={(event) => {
-                  event.stopPropagation();
-                }}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  toggleDockPanelMinimized(panelId);
-                }}
-              >
-                {panel.isMinimized ? <OpenInNewWindowIcon /> : <MinusIcon />}
-              </IconButton>
-              <IconButton
-                size="1"
-                variant="ghost"
-                color="ruby"
-                type="button"
-                aria-label={`Close ${title}`}
-                onPointerDown={(event) => {
-                  event.stopPropagation();
-                }}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  closeDockPanel(panelId);
-                }}
-              >
-                <Cross2Icon />
-              </IconButton>
-            </Flex>
+        <Flex className="legacy-dock-panel-header" align="start" justify="between" gap="2">
+          <Flex direction="column" gap="1">
+            <Text size="2" weight="bold">
+              {title}
+            </Text>
+            <Text size="1" color="gray">
+              {subtitle}
+            </Text>
           </Flex>
-          {!panel.isMinimized ? (
-            <Flex direction="column" gap="2" className="legacy-dock-panel-body">
-              {content}
-            </Flex>
-          ) : null}
-          {!panel.isMinimized ? (
-            <button
-              type="button"
-              className="legacy-dock-panel-resize-handle"
-              aria-label={`Resize ${title}`}
-              onPointerDown={(event) => {
-                startDockPanelInteraction(panelId, "resize", event);
-              }}
-            />
-          ) : null}
-        </Card>
-      </Box>
+          <IconButton
+            size="1"
+            variant="ghost"
+            type="button"
+            aria-label={isCollapsed ? `Expand ${title}` : `Collapse ${title}`}
+            onClick={() => toggleStackPanelCollapsed(panelId)}
+          >
+            {isCollapsed ? <ChevronDownIcon /> : <ChevronUpIcon />}
+          </IconButton>
+        </Flex>
+        {!isCollapsed ? (
+          <Flex direction="column" gap="2" className="legacy-dock-panel-body">
+            {content}
+          </Flex>
+        ) : null}
+      </Card>
     );
   };
 
@@ -2513,66 +2264,95 @@ export function App() {
                 void connectToServer();
               }}
             >
-              <Flex className="legacy-connect-strip" gap="2" wrap="wrap" align="center">
-                <TextField.Root
-                  size="2"
-                  placeholder="Server address"
-                  style={{ minWidth: 240 }}
-                  value={serverAddress}
-                  onChange={(event) => {
-                    setServerAddress(event.target.value);
-                  }}
-                  disabled={isConnectionBusy(appState.connection.status)}
-                  list="recent-servers"
-                >
-                  <TextField.Slot>
-                    <GlobeIcon />
-                  </TextField.Slot>
-                </TextField.Root>
-                <datalist id="recent-servers">
-                  {appState.recentServers.map((recentServer) => (
-                    <option key={recentServer} value={recentServer} />
-                  ))}
-                </datalist>
-                <TextField.Root
-                  size="2"
-                  placeholder="Nickname"
-                  style={{ minWidth: 180 }}
-                  value={nickname}
-                  onChange={(event) => {
-                    setNickname(event.target.value);
-                  }}
-                  disabled={isConnectionBusy(appState.connection.status)}
-                >
-                  <TextField.Slot>
-                    <ChatBubbleIcon />
-                  </TextField.Slot>
-                </TextField.Root>
-                <Button size="2" type="submit" disabled={isConnectionBusy(appState.connection.status)}>
-                  {appState.connection.status === "authenticating"
-                    ? "Authenticating…"
-                    : appState.connection.status === "connecting"
-                      ? "Joining…"
-                      : "Join"}
-                </Button>
+              <Flex className="legacy-session-strip" align="center" justify="between" gap="2" wrap="wrap">
+                <Flex align="center" gap="2" wrap="wrap">
+                  <Text size="1" color="gray">
+                    {appState.connection.serverAddress || trimmedServerAddress || "Not connected"}
+                  </Text>
+                  <Badge size="1" variant="soft">
+                    {appState.connection.nickname || nickname || "Guest"}
+                  </Badge>
+                  {favoriteServers.length > 0 || appState.recentServers.length > 0 ? (
+                    <Text size="1" color="gray">
+                      {favoriteServers.length + appState.recentServers.length} saved
+                    </Text>
+                  ) : null}
+                </Flex>
                 <Button
-                  size="2"
-                  variant="outline"
+                  size="1"
+                  variant="soft"
                   type="button"
                   onClick={() => {
-                    void rememberServer(serverAddress);
+                    setIsConnectionPanelExpanded((currentValue) => !currentValue);
                   }}
-                  disabled={
-                    isConnectionBusy(appState.connection.status) ||
-                    trimmedServerAddress.length === 0
-                  }
                 >
-                  Save
+                  {isConnectionPanelExpanded ? <ChevronUpIcon /> : <ChevronDownIcon />}
+                  {isConnectionPanelExpanded ? "Hide connection" : "Edit connection"}
                 </Button>
               </Flex>
+              {isConnectionPanelExpanded ? (
+                <Flex className="legacy-connect-strip" gap="2" wrap="wrap" align="center">
+                  <TextField.Root
+                    size="1"
+                    className="legacy-connect-field"
+                    placeholder="Server address"
+                    value={serverAddress}
+                    onChange={(event) => {
+                      setServerAddress(event.target.value);
+                    }}
+                    disabled={isConnectionBusy(appState.connection.status)}
+                    list="recent-servers"
+                  >
+                    <TextField.Slot>
+                      <GlobeIcon />
+                    </TextField.Slot>
+                  </TextField.Root>
+                  <datalist id="recent-servers">
+                    {appState.recentServers.map((recentServer) => (
+                      <option key={recentServer} value={recentServer} />
+                    ))}
+                  </datalist>
+                  <TextField.Root
+                    size="1"
+                    className="legacy-nickname-field"
+                    placeholder="Nickname"
+                    value={nickname}
+                    onChange={(event) => {
+                      setNickname(event.target.value);
+                    }}
+                    disabled={isConnectionBusy(appState.connection.status)}
+                  >
+                    <TextField.Slot>
+                      <ChatBubbleIcon />
+                    </TextField.Slot>
+                  </TextField.Root>
+                  <Button size="1" type="submit" disabled={isConnectionBusy(appState.connection.status)}>
+                    {appState.connection.status === "authenticating"
+                      ? "Authenticating…"
+                      : appState.connection.status === "connecting"
+                        ? "Joining…"
+                        : "Join"}
+                  </Button>
+                  <Button
+                    size="1"
+                    variant="outline"
+                    type="button"
+                    onClick={() => {
+                      void rememberServer(serverAddress);
+                    }}
+                    disabled={
+                      isConnectionBusy(appState.connection.status) ||
+                      trimmedServerAddress.length === 0
+                    }
+                  >
+                    Save
+                  </Button>
+                </Flex>
+              ) : null}
             </form>
 
-            {favoriteServers.length > 0 || appState.recentServers.length > 0 ? (
+            {isConnectionPanelExpanded &&
+            (favoriteServers.length > 0 || appState.recentServers.length > 0) ? (
               <Flex className="legacy-server-strip" gap="2" wrap="wrap" align="center">
                 {favoriteServers.length > 0 ? (
                   <>
@@ -2891,62 +2671,111 @@ export function App() {
               </Flex>
             </Card>
 
-            <Grid columns={{ initial: "1", md: "3" }} gap="2" className="legacy-dock-grid">
-              {renderDockPanel(
+            <Grid columns="1" gap="2" className="legacy-dock-grid">
+              {renderStackPanel(
                 "log",
+                "Log",
                 "Activity log",
                 "delay-1",
                 <>
-                  {activityLogMessages.length > 0 ? (
-                    <Flex direction="column" gap="1" className="legacy-log-list">
-                      {activityLogMessages.map((message) => (
-                        <Box key={message.id} className="legacy-log-entry">
-                          <Flex align="center" justify="between" gap="2" wrap="wrap">
-                            <Text size="1" weight="bold">
-                              {message.author}
-                            </Text>
-                            <Text size="1" color="gray">
-                              {formatChatTimestamp(message.sentAt)}
-                            </Text>
-                          </Flex>
-                          <Text
-                            size="1"
-                            color={message.severity === "error" ? "ruby" : "gray"}
-                          >
-                            {message.body}
-                          </Text>
-                        </Box>
-                      ))}
-                    </Flex>
-                  ) : (
+                  <Flex align="center" justify="between" gap="2" wrap="wrap">
                     <Text size="1" color="gray">
-                      Recent activity, connection notices, and chat will appear here.
+                      Recent activity
                     </Text>
-                  )}
+                    <Button
+                      size="1"
+                      variant="ghost"
+                      type="button"
+                      onClick={() => {
+                        setIsActivityLogExpanded((currentValue) => !currentValue);
+                      }}
+                    >
+                      {isActivityLogExpanded ? "Hide" : "Show"}
+                    </Button>
+                  </Flex>
+                  {isActivityLogExpanded ? (
+                    activityLogMessages.length > 0 ? (
+                      <Flex direction="column" gap="1" className="legacy-log-list">
+                        {activityLogMessages.map((message) => (
+                          <Box key={message.id} className="legacy-log-entry">
+                            <Flex align="center" justify="between" gap="2" wrap="wrap">
+                              <Text size="1" weight="bold">
+                                {message.author}
+                              </Text>
+                              <Text size="1" color="gray">
+                                {formatChatTimestamp(message.sentAt)}
+                              </Text>
+                            </Flex>
+                            <Text
+                              size="1"
+                              color={message.severity === "error" ? "ruby" : "gray"}
+                            >
+                              {message.body}
+                            </Text>
+                          </Box>
+                        ))}
+                      </Flex>
+                    ) : (
+                      <Text size="1" color="gray">
+                        Recent activity, connection notices, and chat will appear here.
+                      </Text>
+                    )
+                  ) : null}
                 </>,
               )}
 
-              {renderDockPanel(
+              {renderStackPanel(
                 "chat",
+                "Chatbar",
                 chatSubtitle,
                 "delay-2",
                 <>
-                  {activeMessages.length > 0 ? (
-                    <Flex direction="column" gap="1" className="legacy-log-list">
-                      {activeMessages.slice(-4).map((message) => (
-                        <Box key={message.id} className="legacy-log-entry">
-                          <Text size="1" weight="bold">
-                            {message.author}
-                          </Text>
-                          <Text
-                            size="1"
-                            color={message.severity === "error" ? "ruby" : "gray"}
-                          >
-                            {message.body}
-                          </Text>
-                        </Box>
-                      ))}
-                    </Flex>
+                  <Flex align="center" justify="between" gap="2" wrap="wrap">
+                    <Text size="1" color="gray">
+                      Chat log
+                    </Text>
+                    <Button
+                      size="1"
+                      variant="ghost"
+                      type="button"
+                      onClick={() => {
+                        setIsChatLogExpanded((currentValue) => !currentValue);
+                      }}
+                    >
+                      {isChatLogExpanded ? "Hide" : "Show"}
+                    </Button>
+                  </Flex>
+                  {isChatLogExpanded ? (
+                    compactChatLogMessages.length > 0 ? (
+                      <Flex
+                        direction="column"
+                        gap="1"
+                        className="legacy-log-list legacy-chat-log-list"
+                      >
+                        {compactChatLogMessages.map((message) => (
+                          <Box key={message.id} className="legacy-log-entry">
+                            <Flex align="center" justify="between" gap="2" wrap="wrap">
+                              <Text size="1" weight="bold">
+                                {message.author}
+                              </Text>
+                              <Text size="1" color="gray">
+                                {formatChatTimestamp(message.sentAt)}
+                              </Text>
+                            </Flex>
+                            <Text
+                              size="1"
+                              color={message.severity === "error" ? "ruby" : "gray"}
+                            >
+                              {message.body}
+                            </Text>
+                          </Box>
+                        ))}
+                      </Flex>
+                    ) : (
+                      <Text size="1" color="gray">
+                        No chat messages yet for this room or direct message.
+                      </Text>
+                    )
                   ) : null}
                   {selectedParticipant ? (
                     <Flex direction="column" gap="1">
@@ -3037,8 +2866,9 @@ export function App() {
                 </>,
               )}
 
-              {renderDockPanel(
+              {renderStackPanel(
                 "self",
+                "Self / Configure",
                 "Voice controls, transport, and preferences",
                 "delay-3",
                 <>
@@ -3241,25 +3071,6 @@ export function App() {
                 </>,
               )}
             </Grid>
-            {closedDockPanels.length > 0 ? (
-              <Flex className="legacy-dock-restore-strip" gap="2" wrap="wrap" align="center">
-                <Text size="1" color="gray">
-                  Closed panels
-                </Text>
-                {closedDockPanels.map((panelId) => (
-                  <Button
-                    key={panelId}
-                    size="1"
-                    variant="soft"
-                    onClick={() => {
-                      restoreDockPanel(panelId);
-                    }}
-                  >
-                    Restore {DOCK_PANEL_TITLES[panelId]}
-                  </Button>
-                ))}
-              </Flex>
-            ) : null}
 
             <Card className="section-card legacy-minimal-note">
               <Text size="1">{minimalViewNote}</Text>
