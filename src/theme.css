@@ -68,6 +68,107 @@ main {
   margin: 0 auto;
 }
 
+.legacy-main-window {
+  max-width: 1280px;
+}
+
+.legacy-window-frame {
+  min-height: calc(100vh - 24px);
+}
+
+.legacy-menu-bar,
+.legacy-toolbar,
+.legacy-connect-strip,
+.legacy-server-strip,
+.legacy-minimal-note {
+  border: 1px solid rgb(var(--app-border-rgb) / 0.55);
+  background: linear-gradient(
+    180deg,
+    rgb(var(--app-surface-rgb) / 0.92),
+    rgb(var(--app-bg-rgb) / 0.92)
+  );
+  border-radius: 8px;
+}
+
+.legacy-menu-bar {
+  padding: 3px 8px;
+  min-height: 30px;
+}
+
+.legacy-menu-button {
+  min-width: 0;
+  padding-inline: 6px;
+  color: var(--app-text);
+}
+
+.legacy-toolbar {
+  padding: 6px;
+}
+
+.legacy-toolbar-separator {
+  width: 1px;
+  height: 18px;
+  background: rgb(var(--app-border-rgb) / 0.65);
+  margin: 0 2px;
+}
+
+.legacy-connect-strip {
+  padding: 6px 8px;
+}
+
+.legacy-server-strip {
+  padding: 4px 8px;
+}
+
+.legacy-inline-alert {
+  background: rgb(95 20 30 / 0.35);
+}
+
+.legacy-tree-panel {
+  min-height: 230px;
+}
+
+.legacy-tree-panel .rt-CardInner,
+.legacy-dock-panel .rt-CardInner,
+.legacy-minimal-note .rt-CardInner {
+  height: 100%;
+}
+
+.legacy-tree-participant {
+  margin-top: 2px;
+}
+
+.legacy-inline-avatar {
+  width: 18px !important;
+  height: 18px !important;
+  border-radius: 6px !important;
+}
+
+.legacy-dock-grid {
+  align-items: stretch;
+}
+
+.legacy-dock-panel {
+  min-height: 280px;
+}
+
+.legacy-log-list {
+  max-height: 220px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.legacy-log-entry {
+  padding: 4px 6px;
+  border-radius: 6px;
+  background: rgb(var(--app-bg-rgb) / 0.28);
+  border: 1px solid rgb(var(--app-border-rgb) / 0.28);
+}
+
+.legacy-compact-select {
+  max-width: 180px;
+}
+
 .compact-panel {
   background: linear-gradient(
     180deg,

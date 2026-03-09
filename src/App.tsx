@@ -42,7 +42,6 @@ import {
   SYSTEM_DEFAULT_DEVICE_ID,
   type BrowserAudioDevice,
 } from "./audioDevices";
-import { QuickAction } from "./components/QuickAction";
 import { SectionHeader } from "./components/SectionHeader";
 import { StatusChip } from "./components/StatusChip";
 import { buildFailedConnectionRecovery } from "./connectionRecovery";
@@ -70,7 +69,6 @@ import {
   stepVoiceActivation,
 } from "./voiceActivation";
 import {
-  describeQuickActionLatency,
   describeTalkMode,
   describeTransportStatus,
   findNextNavigableChannel,
@@ -168,12 +166,13 @@ const RMS_TO_LEVEL_SCALING_FACTOR = 4.5;
 const VOICE_CAPTURE_TIMESLICE_MS = 250;
 const BASE_CHANNEL_PADDING = 12;
 const CHANNEL_INDENT_PER_LEVEL = 12;
+const PARTICIPANT_INDENT_OFFSET = 18;
+const MAX_ACTIVITY_LOG_MESSAGES = 12;
 const PREFERRED_VOICE_CAPTURE_MIME_TYPES = [
   "audio/webm;codecs=opus",
   "audio/webm",
   "audio/ogg;codecs=opus",
 ] as const;
-type WorkspaceView = "rooms" | "voice" | "settings";
 
 const statusCopy: Record<AppClientConnectionState["status"], string> = {
   disconnected: "Disconnected",
@@ -373,7 +372,6 @@ export function App() {
   const [participantNicknameDraft, setParticipantNicknameDraft] = useState("");
   const [themeError, setThemeError] = useState<string | null>(null);
   const [themeMessage, setThemeMessage] = useState<string | null>(null);
-  const [workspaceView, setWorkspaceView] = useState<WorkspaceView>("rooms");
   const [importedTheme, setImportedTheme] = useState<Base16Theme | null>(() =>
     typeof window === "undefined"
       ? null
@@ -1325,10 +1323,6 @@ export function App() {
       voiceActivation,
     ],
   );
-  const latencyQuickActionLabel = useMemo(
-    () => describeQuickActionLatency(appState.telemetry, voiceTransportStatus),
-    [appState.telemetry, voiceTransportStatus],
-  );
   const nextNavigableChannel = useMemo(
     () => findNextNavigableChannel(appState.channels, appState.activeChannelId),
     [appState.activeChannelId, appState.channels],
@@ -1757,7 +1751,6 @@ export function App() {
   ]);
 
   const openDiagnostics = () => {
-    setWorkspaceView("voice");
     if (!appState.preferences.showLatencyDetails) {
       void updatePreferences({ showLatencyDetails: true });
     }
@@ -1900,27 +1893,46 @@ export function App() {
   const participantsSubtitle = activeChannel
     ? `${activeParticipants.length} shown${selfParticipantChannel && selfParticipantChannel.id !== activeChannel.id ? ` · you are in ${selfParticipantChannel.name}` : ""}`
     : "Live session roster";
-  const workspaceTabs: Array<{
-    value: WorkspaceView;
-    label: string;
-    title: string;
-  }> = [
-    {
-      value: "rooms",
-      label: "Rooms",
-      title: "Channels, participants, and chat",
-    },
-    {
-      value: "voice",
-      label: "Voice",
-      title: "DSP, quick actions, diagnostics, and transport",
-    },
-    {
-      value: "settings",
-      label: "Settings",
-      title: "Preferences, shortcuts, and saved session settings",
-    },
-  ];
+  const participantsByChannel = useMemo(() => {
+    const groupedParticipants = new Map<string, AppClientParticipant[]>();
+
+    for (const participant of appState.participants) {
+      const channelParticipants =
+        groupedParticipants.get(participant.channelId) ?? [];
+      channelParticipants.push(participant);
+      groupedParticipants.set(participant.channelId, channelParticipants);
+    }
+
+    for (const channelParticipants of groupedParticipants.values()) {
+      channelParticipants.sort((leftParticipant, rightParticipant) => {
+        const statusOrderDifference =
+          talkingParticipantOrder[leftParticipant.status] -
+          talkingParticipantOrder[rightParticipant.status];
+        if (statusOrderDifference !== 0) {
+          return statusOrderDifference;
+        }
+
+        if (leftParticipant.isSelf !== rightParticipant.isSelf) {
+          return leftParticipant.isSelf ? -1 : 1;
+        }
+
+        return getParticipantDisplayName(
+          leftParticipant,
+          localNicknames,
+        ).localeCompare(getParticipantDisplayName(rightParticipant, localNicknames));
+      });
+    }
+
+    return groupedParticipants;
+  }, [appState.participants, localNicknames]);
+  const activityLogMessages = useMemo(
+    () => [...appState.messages].slice(-MAX_ACTIVITY_LOG_MESSAGES).reverse(),
+    [appState.messages],
+  );
+  const minimalViewNote =
+    appState.connection.status === "connected"
+      ? `Connected to ${appState.connection.serverAddress || serverAddress || "server"} as ${appState.connection.nickname || nickname || "guest"} · ${participantsSubtitle.toLowerCase()}`
+      : "You are currently in minimal view but not connected to a server. Use the toolbar to connect or open the talking popout.";
 
   if (isTalkingPopout) {
     return (
@@ -2025,758 +2037,454 @@ export function App() {
         className="subtle-grid app-shell"
         style={{ ...themeVariables, minHeight: "100vh" }}
       >
-        <main className="app-main">
+        <main className="app-main legacy-main-window">
           <audio ref={outputPreviewRef} preload="none" />
-          <Flex direction="column" gap="4">
-            <Card className="hero-card compact-panel fade-in">
-              <Flex
-                direction={{ initial: "column", md: "row" }}
-                gap="4"
-                align="start"
+          <Flex direction="column" gap="2" className="legacy-window-frame">
+            <Flex className="legacy-menu-bar" align="center" justify="between" gap="3" wrap="wrap">
+              <Flex align="center" gap="1" wrap="wrap">
+                <Button size="1" variant="ghost" className="legacy-menu-button">
+                  Server
+                </Button>
+                <Button size="1" variant="ghost" className="legacy-menu-button">
+                  Self
+                </Button>
+                <Button size="1" variant="ghost" className="legacy-menu-button">
+                  Configure
+                </Button>
+                <Button size="1" variant="ghost" className="legacy-menu-button">
+                  Help
+                </Button>
+              </Flex>
+              <Flex align="center" gap="1" wrap="wrap">
+                <StatusChip
+                  status={
+                    appState.connection.status === "connected"
+                      ? "live"
+                      : appState.connection.status === "error"
+                        ? "muted"
+                        : "idle"
+                  }
+                  label={statusCopy[appState.connection.status]}
+                />
+                <StatusChip status="idle" label={`Running on ${platformLabel}`} />
+                <StatusChip
+                  status={
+                    voiceActivation.isTransmitting
+                      ? "live"
+                      : voiceActivation.mode === "muted"
+                        ? "muted"
+                        : "idle"
+                  }
+                  label={voiceActivationLabel}
+                />
+              </Flex>
+            </Flex>
+
+            <Flex className="legacy-toolbar" align="center" gap="1" wrap="wrap">
+              <Button
+                size="1"
+                variant="soft"
+                onClick={() => {
+                  void connectToServer();
+                }}
+                disabled={isConnectionBusy(appState.connection.status)}
               >
-                <Box style={{ flex: 1 }}>
-                  <Flex direction="column" gap="2">
-                    <Badge size="1" variant="solid" className="pulse">
-                      ultracompact desktop shell
-                    </Badge>
-                    <Heading size="6">Mumble desktop client</Heading>
-                    <Text size="2" color="gray">
-                      Dense room controls, dark styling, and a talking popout
-                      for live sessions.
+                <GlobeIcon />
+                Connect
+              </Button>
+              <Button
+                size="1"
+                variant="soft"
+                onClick={() => {
+                  void disconnectFromServer();
+                }}
+                disabled={
+                  appState.connection.status === "disconnected" &&
+                  !appState.connection.error
+                }
+              >
+                Disconnect
+              </Button>
+              <Button
+                size="1"
+                variant="soft"
+                onClick={saveFavoriteServer}
+                disabled={
+                  appState.connection.status === "connecting" ||
+                  trimmedServerAddress.length === 0
+                }
+              >
+                Add favorite
+              </Button>
+              <Box className="legacy-toolbar-separator" />
+              <Button
+                size="1"
+                variant="soft"
+                onClick={() => {
+                  void cycleChannel();
+                }}
+                disabled={!nextNavigableChannel}
+                title={
+                  nextNavigableChannel
+                    ? `Move to ${nextNavigableChannel.name}`
+                    : "Connect to browse rooms"
+                }
+              >
+                Back
+              </Button>
+              <Box className="legacy-toolbar-separator" />
+              <Button
+                size="1"
+                variant={appState.audio.selfMuted ? "solid" : "soft"}
+                color={appState.audio.selfMuted ? "red" : undefined}
+                onClick={() => {
+                  void updateAudioSettings({
+                    selfMuted: !appState.audio.selfMuted,
+                  });
+                }}
+                title={quickActionTalkModeLabel}
+              >
+                <SpeakerOffIcon />
+                Mute
+              </Button>
+              <Button
+                size="1"
+                variant={appState.preferences.pushToTalk ? "solid" : "soft"}
+                color={appState.preferences.pushToTalk ? "cyan" : undefined}
+                onClick={() => {
+                  void updatePreferences({
+                    pushToTalk: !appState.preferences.pushToTalk,
+                  });
+                }}
+                title={pushToTalkShortcutLabel}
+              >
+                <PersonIcon />
+                PTT
+              </Button>
+              <Button
+                size="1"
+                variant="soft"
+                onClick={() => {
+                  void openTalkingPopout();
+                }}
+              >
+                <OpenInNewWindowIcon />
+                Popout
+              </Button>
+              <Box className="legacy-toolbar-separator" />
+              <Button size="1" variant="soft" onClick={importBase16Theme}>
+                Import theme
+              </Button>
+              {importedTheme ? (
+                <Button size="1" variant="ghost" onClick={resetImportedTheme}>
+                  Reset theme
+                </Button>
+              ) : null}
+              <Button size="1" variant="soft" onClick={openDiagnostics}>
+                <LightningBoltIcon />
+                Diagnostics
+              </Button>
+            </Flex>
+
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                void connectToServer();
+              }}
+            >
+              <Flex className="legacy-connect-strip" gap="2" wrap="wrap" align="center">
+                <TextField.Root
+                  size="2"
+                  placeholder="Server address"
+                  style={{ minWidth: 240 }}
+                  value={serverAddress}
+                  onChange={(event) => {
+                    setServerAddress(event.target.value);
+                  }}
+                  disabled={isConnectionBusy(appState.connection.status)}
+                  list="recent-servers"
+                >
+                  <TextField.Slot>
+                    <GlobeIcon />
+                  </TextField.Slot>
+                </TextField.Root>
+                <datalist id="recent-servers">
+                  {appState.recentServers.map((recentServer) => (
+                    <option key={recentServer} value={recentServer} />
+                  ))}
+                </datalist>
+                <TextField.Root
+                  size="2"
+                  placeholder="Nickname"
+                  style={{ minWidth: 180 }}
+                  value={nickname}
+                  onChange={(event) => {
+                    setNickname(event.target.value);
+                  }}
+                  disabled={isConnectionBusy(appState.connection.status)}
+                >
+                  <TextField.Slot>
+                    <ChatBubbleIcon />
+                  </TextField.Slot>
+                </TextField.Root>
+                <Button size="2" type="submit" disabled={isConnectionBusy(appState.connection.status)}>
+                  {appState.connection.status === "authenticating"
+                    ? "Authenticating…"
+                    : appState.connection.status === "connecting"
+                      ? "Joining…"
+                      : "Join"}
+                </Button>
+                <Button
+                  size="2"
+                  variant="outline"
+                  type="button"
+                  onClick={() => {
+                    void rememberServer(serverAddress);
+                  }}
+                  disabled={
+                    isConnectionBusy(appState.connection.status) ||
+                    trimmedServerAddress.length === 0
+                  }
+                >
+                  Save
+                </Button>
+              </Flex>
+            </form>
+
+            {favoriteServers.length > 0 || appState.recentServers.length > 0 ? (
+              <Flex className="legacy-server-strip" gap="2" wrap="wrap" align="center">
+                {favoriteServers.length > 0 ? (
+                  <>
+                    <Text size="1" color="gray">
+                      Favorites
                     </Text>
-                    <form
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        void connectToServer();
-                      }}
-                    >
-                      <Flex gap="2" wrap="wrap" align="center">
-                        <TextField.Root
-                          size="2"
-                          placeholder="Server address"
-                          style={{ minWidth: 240 }}
-                          value={serverAddress}
-                          onChange={(event) => {
-                            setServerAddress(event.target.value);
-                          }}
-                          disabled={isConnectionBusy(
-                            appState.connection.status,
-                          )}
-                          list="recent-servers"
-                        >
-                          <TextField.Slot>
-                            <GlobeIcon />
-                          </TextField.Slot>
-                        </TextField.Root>
-                        <datalist id="recent-servers">
-                          {appState.recentServers.map((recentServer) => (
-                            <option key={recentServer} value={recentServer} />
-                          ))}
-                        </datalist>
-                        <TextField.Root
-                          size="2"
-                          placeholder="Nickname"
-                          style={{ minWidth: 200 }}
-                          value={nickname}
-                          onChange={(event) => {
-                            setNickname(event.target.value);
-                          }}
-                          disabled={isConnectionBusy(
-                            appState.connection.status,
-                          )}
-                        >
-                          <TextField.Slot>
-                            <ChatBubbleIcon />
-                          </TextField.Slot>
-                        </TextField.Root>
-                        <Button
-                          size="2"
-                          type="submit"
-                          disabled={isConnectionBusy(
-                            appState.connection.status,
-                          )}
-                        >
-                          {appState.connection.status === "authenticating"
-                            ? "Authenticating…"
-                            : appState.connection.status === "connecting"
-                              ? "Joining…"
-                              : "Join voice"}
-                        </Button>
-                        <Button
-                          size="2"
-                          variant="outline"
-                          type="button"
-                          onClick={() => {
-                            void rememberServer(serverAddress);
-                          }}
-                          disabled={
-                            isConnectionBusy(appState.connection.status) ||
-                            trimmedServerAddress.length === 0
-                          }
-                        >
-                          Save server
-                        </Button>
-                        <Button
-                          size="2"
-                          variant="outline"
-                          type="button"
-                          onClick={saveFavoriteServer}
-                          disabled={
-                            appState.connection.status === "connecting" ||
-                            trimmedServerAddress.length === 0
-                          }
-                        >
-                          Add favorite
-                        </Button>
-                        <Button
-                          size="2"
-                          variant="soft"
-                          type="button"
-                          onClick={() => {
-                            void disconnectFromServer();
-                          }}
-                          disabled={
-                            appState.connection.status === "disconnected" &&
-                            !appState.connection.error
-                          }
-                        >
-                          Disconnect
-                        </Button>
-                      </Flex>
-                      {favoriteServers.length > 0 ? (
-                        <Flex
-                          direction="column"
-                          gap="2"
-                          style={{ marginTop: 12 }}
-                        >
-                          <Text size="2" color="gray">
-                            Favorite servers
-                          </Text>
-                          <Flex gap="2" align="center" wrap="wrap">
-                            {favoriteServers.map((favoriteServer) => (
-                              <Flex
-                                key={favoriteServer.address}
-                                gap="1"
-                                align="center"
-                              >
-                                <Button
-                                  size="1"
-                                  variant={
-                                    trimmedServerAddress ===
-                                    favoriteServer.address
-                                      ? "solid"
-                                      : "soft"
-                                  }
-                                  type="button"
-                                  onClick={() => {
-                                    loadFavoriteServer(favoriteServer);
-                                  }}
-                                  disabled={
-                                    appState.connection.status === "connecting"
-                                  }
-                                >
-                                  {favoriteServer.label}
-                                </Button>
-                                <IconButton
-                                  size="1"
-                                  variant="ghost"
-                                  color="ruby"
-                                  type="button"
-                                  aria-label={`Remove favorite ${favoriteServer.label}`}
-                                  onClick={() => {
-                                    removeFavoriteServer(
-                                      favoriteServer.address,
-                                    );
-                                  }}
-                                  disabled={
-                                    appState.connection.status === "connecting"
-                                  }
-                                >
-                                  ×
-                                </IconButton>
-                              </Flex>
-                            ))}
-                          </Flex>
-                        </Flex>
-                      ) : null}
-                      {appState.recentServers.length > 0 ? (
-                        <Flex
-                          gap="2"
-                          align="center"
-                          wrap="wrap"
-                          style={{ marginTop: 12 }}
-                        >
-                          <Text size="2" color="gray">
-                            Recent servers
-                          </Text>
-                          {appState.recentServers.map((recentServer) => (
-                            <Button
-                              key={recentServer}
-                              size="1"
-                              variant={
-                                trimmedServerAddress === recentServer
-                                  ? "solid"
-                                  : "soft"
-                              }
-                              type="button"
-                              onClick={() => {
-                                loadRecentServer(recentServer);
-                              }}
-                              disabled={isConnectionBusy(
-                                appState.connection.status,
-                              )}
-                            >
-                              {recentServer}
-                            </Button>
-                          ))}
-                        </Flex>
-                      ) : null}
-                    </form>
-                    <Flex gap="2" align="center" wrap="wrap">
-                      <StatusChip
-                        status={
-                          appState.connection.status === "connected"
-                            ? "live"
-                            : appState.connection.status === "error"
-                              ? "muted"
-                              : "idle"
-                        }
-                        label={statusCopy[appState.connection.status]}
-                      />
-                      <StatusChip
-                        status="idle"
-                        label={`Running on ${platformLabel}`}
-                      />
-                      <StatusChip
-                        status={
-                          handshakeState === "success"
-                            ? "live"
-                            : handshakeState === "error"
-                              ? "muted"
-                              : "idle"
-                        }
-                        label={secureTransportLabel}
-                      />
-                      <StatusChip
-                        status={
-                          voiceActivation.isTransmitting
-                            ? "live"
-                            : voiceActivation.mode === "muted"
-                              ? "muted"
-                              : "idle"
-                        }
-                        label={voiceActivationLabel}
-                      />
-                      {voiceTransportStatus ? (
-                        <StatusChip
-                          status={
-                            voiceTransportStatus.state === "connected"
-                              ? "live"
-                              : voiceTransportStatus.lastError
-                                ? "muted"
-                                : "idle"
-                          }
-                          label={
-                            voiceTransportStatus.state === "connected"
-                              ? "voice loopback ready"
-                              : voiceTransportStatus.lastError
-                                ? "voice link error"
-                                : "voice link idle"
-                          }
-                        />
-                      ) : null}
-                      {appState.telemetry.jitterMs !== null ? (
-                        <StatusChip
-                          status="live"
-                          label={`${appState.telemetry.jitterMs} ms jitter`}
-                        />
-                      ) : null}
-                      <Button
-                        size="1"
-                        variant="soft"
-                        type="button"
-                        onClick={importBase16Theme}
-                      >
-                        Import Base16
-                      </Button>
-                      {importedTheme ? (
+                    {favoriteServers.map((favoriteServer) => (
+                      <Flex key={favoriteServer.address} gap="1" align="center">
                         <Button
                           size="1"
-                          variant="ghost"
+                          variant={
+                            trimmedServerAddress === favoriteServer.address
+                              ? "solid"
+                              : "soft"
+                          }
                           type="button"
-                          onClick={resetImportedTheme}
+                          onClick={() => {
+                            loadFavoriteServer(favoriteServer);
+                          }}
+                          disabled={appState.connection.status === "connecting"}
                         >
-                          Reset theme
+                          {favoriteServer.label}
                         </Button>
-                      ) : null}
-                    </Flex>
-                    {themeMessage ? (
-                      <Text size="1" color="gray">
-                        Theme: {themeMessage}
-                      </Text>
-                    ) : null}
-                    {themeError ? (
-                      <Text size="1" color="ruby">
-                        {themeError}
-                      </Text>
-                    ) : null}
-                    {connectionError &&
-                    connectionRecovery &&
-                    dismissedConnectionErrorKey !== connectionErrorKey ? (
-                      <Card className="section-card">
-                        <Flex direction="column" gap="3">
-                          <SectionHeader
-                            title="Connection recovery"
-                            subtitle={connectionRecovery.summary}
-                          />
-                          <Text size="2" color="ruby">
-                            {connectionError}
-                          </Text>
-                          <Flex direction="column" gap="2">
-                            {connectionRecovery.steps.map((step) => (
-                              <Text key={step} size="2" color="gray">
-                                • {step}
-                              </Text>
-                            ))}
-                          </Flex>
-                          <Flex gap="3" wrap="wrap">
-                            <Button
-                              size="2"
-                              onClick={() => {
-                                void connectToServer();
-                              }}
-                              disabled={isConnectionBusy(
-                                appState.connection.status,
-                              )}
-                            >
-                              Retry connection
-                            </Button>
-                            <Button
-                              size="2"
-                              variant="soft"
-                              onClick={openDiagnostics}
-                            >
-                              Open diagnostics
-                            </Button>
-                            <Button
-                              size="2"
-                              variant="ghost"
-                              onClick={() => {
-                                setFormError(null);
-                                setDismissedConnectionErrorKey(
-                                  connectionErrorKey,
-                                );
-                              }}
-                            >
-                              Dismiss
-                            </Button>
-                          </Flex>
-                        </Flex>
-                      </Card>
-                    ) : null}
-                    {isLoadingAppState ? (
-                      <Text size="2" color="gray">
-                        Loading saved desktop state…
-                      </Text>
-                    ) : null}
-                    {!isElectronBridgeAvailable ? (
-                      <Text size="2" color="gray">
-                        Open the Electron shell to persist session state, recent
-                        servers, and preferences.
-                      </Text>
-                    ) : null}
-                  </Flex>
-                </Box>
-                <Card className="section-card compact-panel" style={{ minWidth: 300 }}>
-                  <Flex direction="column" gap="3">
-                    <SectionHeader
-                      title="Audio devices"
-                    />
-                    <Flex align="center" justify="between" gap="3" wrap="wrap">
-                      <Badge size="2" variant="outline">
-                        {audioDevices.detectedInputCount} inputs ·{" "}
-                        {audioDevices.detectedOutputCount} outputs
-                      </Badge>
+                        <IconButton
+                          size="1"
+                          variant="ghost"
+                          color="ruby"
+                          type="button"
+                          aria-label={`Remove favorite ${favoriteServer.label}`}
+                          onClick={() => {
+                            removeFavoriteServer(favoriteServer.address);
+                          }}
+                          disabled={appState.connection.status === "connecting"}
+                        >
+                          ×
+                        </IconButton>
+                      </Flex>
+                    ))}
+                  </>
+                ) : null}
+                {appState.recentServers.length > 0 ? (
+                  <>
+                    <Text size="1" color="gray">
+                      Recent
+                    </Text>
+                    {appState.recentServers.map((recentServer) => (
                       <Button
-                        size="2"
-                        variant="soft"
-                        onClick={() => {
-                          void refreshAudioDevices();
-                        }}
-                        disabled={
-                          !audioDevices.supported || isRefreshingDevices
+                        key={recentServer}
+                        size="1"
+                        variant={
+                          trimmedServerAddress === recentServer ? "solid" : "soft"
                         }
+                        type="button"
+                        onClick={() => {
+                          loadRecentServer(recentServer);
+                        }}
+                        disabled={isConnectionBusy(appState.connection.status)}
                       >
-                        {isRefreshingDevices ? "Refreshing…" : "Refresh"}
+                        {recentServer}
                       </Button>
-                    </Flex>
-                    <Flex direction="column" gap="2">
-                      <label className="device-field">
-                        <Text size="2" color="gray">
-                          Input device
-                        </Text>
-                        <select
-                          className="device-select"
-                          value={audioDevices.selectedInputId}
-                          onChange={(event) => {
-                            const nextValue = event.target.value;
-                            setSelectedInputId(nextValue);
-                            void updateAudioSettings({
-                              inputDeviceId: nextValue,
-                            });
-                          }}
-                          disabled={!audioDevices.supported}
-                        >
-                          {audioDevices.inputs.map((device) => (
-                            <option key={device.id} value={device.id}>
-                              {device.label}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className="device-field">
-                        <Text size="2" color="gray">
-                          Output device
-                        </Text>
-                        <select
-                          className="device-select"
-                          value={audioDevices.selectedOutputId}
-                          onChange={(event) => {
-                            const nextValue = event.target.value;
-                            setSelectedOutputId(nextValue);
-                            void updateAudioSettings({
-                              outputDeviceId: nextValue,
-                            });
-                          }}
-                          disabled={!audioDevices.supported}
-                        >
-                          {audioDevices.outputs.map((device) => (
-                            <option key={device.id} value={device.id}>
-                              {device.label}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    </Flex>
-                    <Flex direction="column" gap="2">
-                      <Flex align="center" justify="between" gap="3">
-                        <Text size="2">Capture enabled</Text>
-                        <Switch
-                          checked={appState.audio.captureEnabled}
-                          onCheckedChange={(checked) => {
-                            void updateAudioSettings({
-                              captureEnabled: checked,
-                            });
-                          }}
-                        />
-                      </Flex>
-                      <Flex align="center" justify="between" gap="3">
-                        <Text size="2">Self mute</Text>
-                        <Switch
-                          checked={appState.audio.selfMuted}
-                          onCheckedChange={(checked) => {
-                            void updateAudioSettings({ selfMuted: checked });
-                          }}
-                        />
-                      </Flex>
-                      <label className="device-field">
-                        <Text size="2" color="gray">
-                          Input gain · {appState.audio.inputGain}%
-                        </Text>
-                        <input
-                          type="range"
-                          min="0"
-                          max="150"
-                          value={appState.audio.inputGain}
-                          onChange={(event) => {
-                            void updateAudioSettings({
-                              inputGain: Number(event.target.value),
-                            });
-                          }}
-                        />
-                      </label>
-                      <label className="device-field">
-                        <Text size="2" color="gray">
-                          Output gain · {appState.audio.outputGain}%
-                        </Text>
-                        <input
-                          type="range"
-                          min="0"
-                          max="150"
-                          value={appState.audio.outputGain}
-                          onChange={(event) => {
-                            void updateAudioSettings({
-                              outputGain: Number(event.target.value),
-                            });
-                          }}
-                        />
-                      </label>
-                      <Flex direction="column" gap="2">
-                        <Flex align="center" justify="between" gap="3">
-                          <Text size="2">Realtime metering</Text>
-                          <Badge
-                            size="2"
-                            variant="soft"
-                            color={
-                              voiceActivation.isTransmitting
-                                ? "green"
-                                : voiceActivation.mode === "muted"
-                                  ? "red"
-                                  : "gray"
-                            }
-                          >
-                            {voiceActivationLabel}
-                          </Badge>
-                        </Flex>
-                        <Box className="meter-stack">
-                          <Box className="meter-field">
-                            <Flex align="center" justify="between" gap="3">
-                              <Text size="1" color="gray">
-                                Input level
-                              </Text>
-                              <Text size="1" color="gray">
-                                {Math.round(voiceActivation.inputLevel * 100)}%
-                              </Text>
-                            </Flex>
-                            <div
-                              className="audio-meter"
-                              role="meter"
-                              aria-label="Input level meter"
-                              aria-valuemin={0}
-                              aria-valuemax={100}
-                              aria-valuenow={Math.round(
-                                voiceActivation.inputLevel * 100,
-                              )}
-                            >
-                              <div
-                                className="audio-meter-fill"
-                                style={{
-                                  width: `${voiceActivation.inputLevel * 100}%`,
-                                }}
-                              />
-                            </div>
-                          </Box>
-                          <Box className="meter-field">
-                            <Flex align="center" justify="between" gap="3">
-                              <Text size="1" color="gray">
-                                Transmit bus
-                              </Text>
-                              <Text size="1" color="gray">
-                                {Math.round(voiceActivation.outputLevel * 100)}%
-                              </Text>
-                            </Flex>
-                            <div
-                              className="audio-meter"
-                              role="meter"
-                              aria-label="Transmit level meter"
-                              aria-valuemin={0}
-                              aria-valuemax={100}
-                              aria-valuenow={Math.round(
-                                voiceActivation.outputLevel * 100,
-                              )}
-                            >
-                              <div
-                                className="audio-meter-fill transmit"
-                                style={{
-                                  width: `${voiceActivation.outputLevel * 100}%`,
-                                }}
-                              />
-                            </div>
-                          </Box>
-                        </Box>
-                        <Text size="1" color="gray">
-                          {appState.preferences.pushToTalk
-                            ? `Hold ${pushToTalkShortcutLabel} to open the send bus.`
-                            : `Voice activity detection opens the send bus once input crosses ${Math.round(DEFAULT_VAD_START_THRESHOLD * 100)}%.`}
-                        </Text>
-                        {meteringError ? (
-                          <Text size="1" color="ruby">
-                            {meteringError}
-                          </Text>
-                        ) : null}
-                        {voicePlaybackError ? (
-                          <Text size="1" color="ruby">
-                            {voicePlaybackError}
-                          </Text>
-                        ) : null}
-                      </Flex>
-                    </Flex>
-                    <Separator size="4" />
-                    <Flex direction="column" gap="1">
-                      <Text size="2" color="gray">
-                        Capture route: {audioDevices.inputRoute.resolvedLabel}
+                    ))}
+                  </>
+                ) : null}
+              </Flex>
+            ) : null}
+
+            {connectionError &&
+            connectionRecovery &&
+            dismissedConnectionErrorKey !== connectionErrorKey ? (
+              <Card className="section-card legacy-inline-alert">
+                <Flex direction="column" gap="2">
+                  <Text size="2" color="ruby" weight="bold">
+                    {connectionError}
+                  </Text>
+                  <Flex direction="column" gap="1">
+                    {connectionRecovery.steps.map((step) => (
+                      <Text key={step} size="1" color="gray">
+                        • {step}
                       </Text>
-                      <Text size="2" color="gray">
-                        Playback route: {audioDevices.outputRoute.resolvedLabel}
-                      </Text>
-                      <Text size="2" color="gray">
-                        {outputRoutingReady
-                          ? "Preview audio follows the selected output device."
-                          : "Preview audio routing follows this selection when the current browser or runtime supports sink switching."}
-                      </Text>
-                      {audioDevices.error ? (
-                        <Text size="2" color="ruby">
-                          {audioDevices.error}
-                        </Text>
+                    ))}
+                  </Flex>
+                  <Flex gap="2" wrap="wrap">
+                    <Button
+                      size="1"
+                      onClick={() => {
+                        void connectToServer();
+                      }}
+                      disabled={isConnectionBusy(appState.connection.status)}
+                    >
+                      Retry
+                    </Button>
+                    <Button size="1" variant="soft" onClick={openDiagnostics}>
+                      Diagnostics
+                    </Button>
+                    <Button
+                      size="1"
+                      variant="ghost"
+                      onClick={() => {
+                        setFormError(null);
+                        setDismissedConnectionErrorKey(connectionErrorKey);
+                      }}
+                    >
+                      Dismiss
+                    </Button>
+                  </Flex>
+                </Flex>
+              </Card>
+            ) : null}
+
+            {themeMessage ? (
+              <Text size="1" color="gray">
+                Theme: {themeMessage}
+              </Text>
+            ) : null}
+            {themeError ? (
+              <Text size="1" color="ruby">
+                {themeError}
+              </Text>
+            ) : null}
+            {isLoadingAppState ? (
+              <Text size="1" color="gray">
+                Loading saved desktop state…
+              </Text>
+            ) : null}
+            {!isElectronBridgeAvailable ? (
+              <Text size="1" color="gray">
+                Open the Electron shell to persist session state and preferences.
+              </Text>
+            ) : null}
+
+            <Card className="section-card compact-panel legacy-tree-panel fade-in">
+              <Flex direction="column" gap="2">
+                <SectionHeader
+                  title={appState.connection.serverAddress || "Main Window"}
+                  subtitle={channelsSubtitle}
+                  action={
+                    <Flex gap="1" wrap="wrap">
+                      {handshakeState === "success" ? (
+                        <Badge size="1" color="green" variant="soft">
+                          Secure
+                        </Badge>
+                      ) : null}
+                      {appState.telemetry.jitterMs !== null ? (
+                        <Badge size="1" variant="soft">
+                          {appState.telemetry.jitterMs} ms jitter
+                        </Badge>
                       ) : null}
                     </Flex>
-                  </Flex>
-                </Card>
-              </Flex>
-            </Card>
+                  }
+                />
+                {appState.channels.length > 0 ? (
+                  <Flex direction="column" gap="1">
+                    {appState.channels.map((channel) => {
+                      const participantCount = channel.participantIds.length;
+                      const isActive = channel.id === appState.activeChannelId;
+                      const isJoined = channel.id === selfParticipant?.channelId;
+                      const unreadCount = getUnreadCountForTarget(
+                        appState.messages,
+                        { type: "channel", channelId: channel.id },
+                        readChatMessageIdsByTarget[
+                          getChatTargetKey({
+                            type: "channel",
+                            channelId: channel.id,
+                          })
+                        ],
+                      );
 
-            <Card className="section-card compact-tab-shell fade-in delay-1">
-              <Flex gap="2" wrap="wrap">
-                {workspaceTabs.map((tab) => (
-                  <Button
-                    key={tab.value}
-                    size="2"
-                    variant={workspaceView === tab.value ? "solid" : "soft"}
-                    color={workspaceView === tab.value ? "cyan" : undefined}
-                    className="workspace-tab-button"
-                    title={tab.title}
-                    onClick={() => {
-                      setWorkspaceView(tab.value);
-                    }}
-                  >
-                    {tab.label}
-                  </Button>
-                ))}
-              </Flex>
-            </Card>
-
-            {workspaceView === "rooms" ? (
-              <Flex direction="column" gap="3">
-                <Grid columns={{ initial: "1", md: "2" }} gap="3">
-                  <Card className="section-card compact-panel fade-in delay-1">
-                    <Flex direction="column" gap="3">
-                      <SectionHeader title="Channels" subtitle={channelsSubtitle} />
-                      {appState.channels.length > 0 ? (
-                        <Flex direction="column" gap="1">
-                          {appState.channels.map((channel) => {
-                            const participantCount = channel.participantIds.length;
-                            const isActive =
-                              channel.id === appState.activeChannelId;
-                            const isJoined =
-                              channel.id === selfParticipant?.channelId;
-                            const unreadCount = getUnreadCountForTarget(
-                              appState.messages,
-                              { type: "channel", channelId: channel.id },
-                              readChatMessageIdsByTarget[
-                                getChatTargetKey({
-                                  type: "channel",
-                                  channelId: channel.id,
-                                })
-                              ],
-                            );
-                            return (
-                              <Flex key={channel.id} gap="1" align="stretch">
-                                <Button
-                                  className={`channel-row-button${isActive ? " is-active" : ""}`}
-                                  variant={isActive ? "solid" : "soft"}
-                                  color={isActive ? "cyan" : undefined}
-                                  style={{
-                                    flex: 1,
-                                    justifyContent: "space-between",
-                                    paddingLeft: `${BASE_CHANNEL_PADDING + channel.depth * CHANNEL_INDENT_PER_LEVEL}px`,
-                                  }}
-                                  title={
-                                    !channel.permissions.enter
-                                      ? `${channel.name} · locked`
-                                      : channel.permissions.speak
-                                        ? `${channel.name} · join room`
-                                        : `${channel.name} · listen only`
-                                  }
-                                  onClick={() => {
-                                    void selectChannel(channel.id);
-                                  }}
-                                  disabled={!channel.permissions.enter}
-                                >
-                                  <Flex
-                                    align="center"
-                                    justify="between"
-                                    width="100%"
-                                    gap="2"
-                                  >
-                                    <Flex align="center" gap="2" wrap="wrap">
-                                      <span>{channel.name}</span>
-                                      {!channel.permissions.enter ? (
-                                        <Text as="span" size="1" color="gray">
-                                          Locked
-                                        </Text>
-                                      ) : null}
-                                      {channel.permissions.enter &&
-                                      !channel.permissions.speak ? (
-                                        <Text as="span" size="1" color="gray">
-                                          Listen
-                                        </Text>
-                                      ) : null}
-                                      {isJoined ? (
-                                        <Badge size="1" color="green" variant="soft">
-                                          Joined
-                                        </Badge>
-                                      ) : null}
-                                      {!isActive && unreadCount > 0 ? (
-                                        <Badge
-                                          size="1"
-                                          color="orange"
-                                          variant="soft"
-                                        >
-                                          {unreadCount}
-                                        </Badge>
-                                      ) : null}
-                                    </Flex>
-                                    <span>{participantCount}</span>
-                                  </Flex>
-                                </Button>
-                                {channel.permissions.enter && !isJoined ? (
-                                  <Button
-                                    size="2"
-                                    variant="soft"
-                                    title={`Join ${channel.name}`}
-                                    onClick={() => {
-                                      void joinChannel(channel.id);
-                                    }}
-                                  >
-                                    Join
-                                  </Button>
-                                ) : null}
+                      return (
+                        <Box key={channel.id}>
+                          <Flex gap="1" align="stretch">
+                            <Button
+                              className={`channel-row-button${isActive ? " is-active" : ""}`}
+                              variant={isActive ? "solid" : "soft"}
+                              color={isActive ? "cyan" : undefined}
+                              style={{
+                                flex: 1,
+                                justifyContent: "space-between",
+                                paddingLeft: `${BASE_CHANNEL_PADDING + channel.depth * CHANNEL_INDENT_PER_LEVEL}px`,
+                              }}
+                              onClick={() => {
+                                void selectChannel(channel.id);
+                              }}
+                              disabled={!channel.permissions.enter}
+                              title={
+                                !channel.permissions.enter
+                                  ? `${channel.name} · locked`
+                                  : channel.permissions.speak
+                                    ? `${channel.name} · join room`
+                                    : `${channel.name} · listen only`
+                              }
+                            >
+                              <Flex align="center" justify="between" width="100%" gap="2">
+                                <Flex align="center" gap="2" wrap="wrap">
+                                  <span>{channel.name}</span>
+                                  {isJoined ? (
+                                    <Badge size="1" color="green" variant="soft">
+                                      Joined
+                                    </Badge>
+                                  ) : null}
+                                  {!channel.permissions.enter ? (
+                                    <Text as="span" size="1" color="gray">
+                                      Locked
+                                    </Text>
+                                  ) : null}
+                                  {channel.permissions.enter &&
+                                  !channel.permissions.speak ? (
+                                    <Text as="span" size="1" color="gray">
+                                      Listen
+                                    </Text>
+                                  ) : null}
+                                  {!isActive && unreadCount > 0 ? (
+                                    <Badge size="1" color="orange" variant="soft">
+                                      {unreadCount}
+                                    </Badge>
+                                  ) : null}
+                                </Flex>
+                                <span>{participantCount}</span>
                               </Flex>
-                            );
-                          })}
-                        </Flex>
-                      ) : (
-                        <Text size="2" color="gray">
-                          {isConnectionBusy(appState.connection.status)
-                            ? "Loading channel tree…"
-                            : "No rooms yet. Connect to a server to load the current channel list."}
-                        </Text>
-                      )}
-                    </Flex>
-                  </Card>
-
-                  <Card className="section-card compact-panel fade-in delay-1">
-                    <Flex direction="column" gap="3">
-                      <SectionHeader
-                        title="Participants"
-                        subtitle={participantsSubtitle}
-                        action={
-                          <Button
-                            size="1"
-                            variant="soft"
-                            title="Open the talking roster in a separate compact window"
-                            onClick={() => {
-                              void openTalkingPopout();
-                            }}
-                          >
-                            <OpenInNewWindowIcon />
-                            Popout
-                          </Button>
-                        }
-                      />
-                      {activeParticipants.length > 0 ? (
-                        <Flex direction="column" gap="1">
-                          {activeParticipants.map((participant) => {
+                            </Button>
+                            {channel.permissions.enter && !isJoined ? (
+                              <Button
+                                size="1"
+                                variant="soft"
+                                onClick={() => {
+                                  void joinChannel(channel.id);
+                                }}
+                                title={`Join ${channel.name}`}
+                              >
+                                Join
+                              </Button>
+                            ) : null}
+                          </Flex>
+                          {(participantsByChannel.get(channel.id) ?? []).map((participant) => {
                             const unreadCount = participant.isSelf
                               ? 0
                               : getUnreadCountForTarget(
@@ -2792,17 +2500,17 @@ export function App() {
                                     })
                                   ],
                                 );
+
                             return (
                               <Button
-                                className="participant-row-button"
                                 key={participant.id}
+                                className="participant-row-button legacy-tree-participant"
                                 type="button"
                                 variant={
                                   selectedParticipantId === participant.id
                                     ? "soft"
                                     : "ghost"
                                 }
-                                title={`Open ${getParticipantDisplayName(participant, localNicknames)} details`}
                                 onClick={() => {
                                   setSelectedParticipantId(participant.id);
                                   setFormError(null);
@@ -2810,308 +2518,306 @@ export function App() {
                                 style={{
                                   justifyContent: "space-between",
                                   width: "100%",
-                                  height: "auto",
-                                  padding: 0,
+                                  marginLeft: `${BASE_CHANNEL_PADDING + channel.depth * CHANNEL_INDENT_PER_LEVEL + PARTICIPANT_INDENT_OFFSET}px`,
                                 }}
+                                title={selectedParticipantChannel?.name}
                               >
-                                <Flex
-                                  className="compact-setting-row"
-                                  align="center"
-                                  justify="between"
-                                  style={{ width: "100%" }}
-                                >
-                                  <Flex align="center" gap="2">
-                                    <Box
-                                      className="participant-avatar compact-avatar"
-                                      style={{
-                                        display: "grid",
-                                        placeItems: "center",
-                                      }}
-                                    >
+                                <Flex align="center" justify="between" width="100%" gap="2">
+                                  <Flex align="center" gap="2" wrap="wrap">
+                                    <Box className="participant-avatar compact-avatar legacy-inline-avatar">
                                       <PersonIcon />
                                     </Box>
-                                    <Box>
-                                      <Text size="2">
-                                        {getParticipantDisplayName(
-                                          participant,
-                                          localNicknames,
-                                        )}
-                                      </Text>
-                                      <Flex align="center" gap="1" wrap="wrap">
-                                        {localNicknames[participant.id] ? (
-                                          <Text size="1" color="gray">
-                                            {participant.name}
-                                          </Text>
-                                        ) : null}
-                                        {getParticipantStateLabels(participant).map(
-                                          (label) => (
-                                            <Badge
-                                              key={`${participant.id}-${label}`}
-                                              size="1"
-                                              variant="soft"
-                                              color="gray"
-                                            >
-                                              {label}
-                                            </Badge>
-                                          ),
-                                        )}
-                                        {!participant.isSelf && unreadCount > 0 ? (
-                                          <Badge
-                                            size="1"
-                                            color="orange"
-                                            variant="soft"
-                                          >
-                                            {unreadCount}
-                                          </Badge>
-                                        ) : null}
-                                      </Flex>
-                                    </Box>
+                                    <Text size="2">
+                                      {getParticipantDisplayName(
+                                        participant,
+                                        localNicknames,
+                                      )}
+                                    </Text>
+                                    {getParticipantStateLabels(participant).map((label) => (
+                                      <Badge
+                                        key={`${participant.id}-${label}`}
+                                        size="1"
+                                        variant="soft"
+                                        color="gray"
+                                      >
+                                        {label}
+                                      </Badge>
+                                    ))}
+                                    {!participant.isSelf && unreadCount > 0 ? (
+                                      <Badge size="1" color="orange" variant="soft">
+                                        {unreadCount}
+                                      </Badge>
+                                    ) : null}
                                   </Flex>
-                                  <StatusChip
-                                    status={participant.status}
-                                    label={getParticipantStatusLabel(participant)}
-                                  />
+                                  <Text size="1" color="gray">
+                                    {getParticipantStatusLabel(participant)}
+                                  </Text>
                                 </Flex>
                               </Button>
                             );
                           })}
-                        </Flex>
-                      ) : (
-                        <Text size="2" color="gray">
-                          {appState.connection.status === "connected"
-                            ? "Nobody is in the active room yet."
-                            : isConnectionBusy(appState.connection.status)
-                              ? "Waiting for the live roster…"
-                              : "Disconnected. Participant presence appears here once the session is live."}
-                        </Text>
-                      )}
-                      {selectedParticipant ? (
-                        <Card className="section-card compact-inline-card">
-                          <Flex direction="column" gap="2">
-                            <Flex align="center" justify="between" gap="2" wrap="wrap">
-                              <Text
-                                size="2"
-                                weight="bold"
-                                title={
-                                  selectedParticipantChannel
-                                    ? `Currently in ${selectedParticipantChannel.name}`
-                                    : "User profile and local nickname"
-                                }
-                              >
-                                Participant details
-                              </Text>
-                              <Button
-                                type="button"
-                                size="1"
-                                variant="ghost"
-                                onClick={() => {
-                                  setSelectedParticipantId(null);
-                                }}
-                              >
-                                Close
-                              </Button>
-                            </Flex>
-                            <Grid columns={{ initial: "1", sm: "2" }} gap="2">
-                              <Box>
-                                <Text size="1" color="gray">
-                                  Display
-                                </Text>
-                                <Text size="2">
-                                  {getParticipantDisplayName(
-                                    selectedParticipant,
-                                    localNicknames,
-                                  )}
-                                </Text>
-                              </Box>
-                              <Box>
-                                <Text size="1" color="gray">
-                                  Server name
-                                </Text>
-                                <Text size="2">{selectedParticipant.name}</Text>
-                              </Box>
-                            </Grid>
-                            <TextField.Root
-                              size="2"
-                              value={participantNicknameDraft}
-                              placeholder="Local nickname"
-                              onChange={(event) => {
-                                setParticipantNicknameDraft(event.target.value);
-                              }}
-                            >
-                              <TextField.Slot>
-                                <PersonIcon />
-                              </TextField.Slot>
-                            </TextField.Root>
-                            <Flex gap="2" wrap="wrap">
-                              <Button
-                                size="2"
-                                type="button"
-                                onClick={() => {
-                                  void saveLocalNickname();
-                                }}
-                              >
-                                Save
-                              </Button>
-                              <Button
-                                size="2"
-                                type="button"
-                                variant="soft"
-                                onClick={() => {
-                                  setParticipantNicknameDraft("");
-                                  void updatePreferences({
-                                    localNicknames: withParticipantLocalNickname(
-                                      localNicknames,
-                                      selectedParticipant.id,
-                                      "",
-                                    ),
-                                  });
-                                }}
-                                disabled={!localNicknames[selectedParticipant.id]}
-                              >
-                                Clear
-                              </Button>
-                            </Flex>
-                          </Flex>
-                        </Card>
-                      ) : null}
-                    </Flex>
-                  </Card>
-                </Grid>
+                        </Box>
+                      );
+                    })}
+                  </Flex>
+                ) : (
+                  <Text size="2" color="gray">
+                    {isConnectionBusy(appState.connection.status)
+                      ? "Loading channel tree…"
+                      : "No rooms yet. Connect to a server to load the current channel list."}
+                  </Text>
+                )}
+              </Flex>
+            </Card>
 
-                <Card className="section-card compact-panel fade-in delay-2">
-                  <Flex direction="column" gap="3">
-                    <SectionHeader title="Chat" subtitle={chatSubtitle} />
-                    {activeMessages.length > 0 ? (
-                      <Flex
-                        direction="column"
-                        gap="1"
-                        className="chat-message-list"
-                        style={{
-                          maxHeight: 260,
-                          overflowY: "auto",
-                          paddingRight: 2,
-                        }}
-                      >
-                        {activeMessages.map((message) => (
-                          <Flex
-                            key={message.id}
-                            className="chat-message-row"
-                            direction="column"
-                            gap="1"
-                          >
-                            <Flex align="center" justify="between" gap="2" wrap="wrap">
-                              <Flex align="center" gap="2" wrap="wrap">
-                                <Text size="2" weight="bold">
-                                  {message.author}
-                                </Text>
-                                {message.isSelf ? (
-                                  <Badge size="1" variant="soft">
-                                    You
-                                  </Badge>
-                                ) : null}
-                                {message.participantId ? (
-                                  <Badge size="1" color="violet" variant="soft">
-                                    Direct
-                                  </Badge>
-                                ) : null}
-                                {message.severity === "error" ? (
-                                  <Badge size="1" color="ruby" variant="soft">
-                                    Error
-                                  </Badge>
-                                ) : null}
-                              </Flex>
-                              <Text size="1" color="gray">
-                                {formatChatTimestamp(message.sentAt)}
-                              </Text>
-                            </Flex>
-                            <Text
-                              size="2"
-                              color={
-                                message.severity === "error" ? "ruby" : undefined
-                              }
-                            >
-                              {message.body}
+            <Grid columns={{ initial: "1", md: "3" }} gap="2" className="legacy-dock-grid">
+              <Card className="section-card compact-panel legacy-dock-panel fade-in delay-1">
+                <Flex direction="column" gap="2">
+                  <SectionHeader title="Log" subtitle="Activity log" />
+                  {activityLogMessages.length > 0 ? (
+                    <Flex direction="column" gap="1" className="legacy-log-list">
+                      {activityLogMessages.map((message) => (
+                        <Box key={message.id} className="legacy-log-entry">
+                          <Flex align="center" justify="between" gap="2" wrap="wrap">
+                            <Text size="1" weight="bold">
+                              {message.author}
+                            </Text>
+                            <Text size="1" color="gray">
+                              {formatChatTimestamp(message.sentAt)}
                             </Text>
                           </Flex>
-                        ))}
-                      </Flex>
-                    ) : (
-                      <Text size="2" color="gray">
-                        {appState.connection.status === "connected"
-                          ? "No chat in the active room yet."
-                          : "Connect to a server to load room chat."}
+                          <Text
+                            size="1"
+                            color={message.severity === "error" ? "ruby" : "gray"}
+                          >
+                            {message.body}
+                          </Text>
+                        </Box>
+                      ))}
+                    </Flex>
+                  ) : (
+                    <Text size="1" color="gray">
+                      Recent activity, connection notices, and chat will appear here.
+                    </Text>
+                  )}
+                </Flex>
+              </Card>
+
+              <Card className="section-card compact-panel legacy-dock-panel fade-in delay-2">
+                <Flex direction="column" gap="2">
+                  <SectionHeader title="Chatbar" subtitle={chatSubtitle} />
+                  {activeMessages.length > 0 ? (
+                    <Flex direction="column" gap="1" className="legacy-log-list">
+                      {activeMessages.slice(-4).map((message) => (
+                        <Box key={message.id} className="legacy-log-entry">
+                          <Text size="1" weight="bold">
+                            {message.author}
+                          </Text>
+                          <Text
+                            size="1"
+                            color={message.severity === "error" ? "ruby" : "gray"}
+                          >
+                            {message.body}
+                          </Text>
+                        </Box>
+                      ))}
+                    </Flex>
+                  ) : null}
+                  {selectedParticipant ? (
+                    <Flex direction="column" gap="1">
+                      <Text size="1" color="gray">
+                        Selected: {selectedParticipantDisplayName}
+                        {selectedParticipantChannel
+                          ? ` · ${selectedParticipantChannel.name}`
+                          : ""}
                       </Text>
-                    )}
-                    <form
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        void sendChatMessage();
-                      }}
-                    >
-                      <Flex direction={{ initial: "column", sm: "row" }} gap="2">
-                        <TextField.Root
-                          size="2"
-                          placeholder={chatPlaceholder}
-                          value={chatDraft}
-                          onChange={(event) => {
-                            setChatDraft(event.target.value);
+                      <TextField.Root
+                        size="1"
+                        value={participantNicknameDraft}
+                        placeholder="Local nickname"
+                        onChange={(event) => {
+                          setParticipantNicknameDraft(event.target.value);
+                        }}
+                      >
+                        <TextField.Slot>
+                          <PersonIcon />
+                        </TextField.Slot>
+                      </TextField.Root>
+                      <Flex gap="1" wrap="wrap">
+                        <Button
+                          size="1"
+                          type="button"
+                          onClick={() => {
+                            void saveLocalNickname();
                           }}
-                          disabled={!canSendChat}
-                          style={{ flex: 1 }}
                         >
-                          <TextField.Slot>
-                            <ChatBubbleIcon />
-                          </TextField.Slot>
-                        </TextField.Root>
-                        <Button size="2" type="submit" disabled={!canSendChat}>
+                          Save alias
+                        </Button>
+                        <Button
+                          size="1"
+                          variant="soft"
+                          type="button"
+                          onClick={() => {
+                            setParticipantNicknameDraft("");
+                            void updatePreferences({
+                              localNicknames: withParticipantLocalNickname(
+                                localNicknames,
+                                selectedParticipant.id,
+                                "",
+                              ),
+                            });
+                          }}
+                          disabled={!localNicknames[selectedParticipant.id]}
+                        >
+                          Clear alias
+                        </Button>
+                      </Flex>
+                    </Flex>
+                  ) : null}
+                  <form
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void sendChatMessage();
+                    }}
+                  >
+                    <Flex direction="column" gap="2">
+                      <TextField.Root
+                        size="2"
+                        placeholder={chatPlaceholder}
+                        value={chatDraft}
+                        onChange={(event) => {
+                          setChatDraft(event.target.value);
+                        }}
+                        disabled={!canSendChat}
+                      >
+                        <TextField.Slot>
+                          <ChatBubbleIcon />
+                        </TextField.Slot>
+                      </TextField.Root>
+                      <Flex align="center" justify="between" gap="2" wrap="wrap">
+                        <Text size="1" color="gray">
+                          {chatTarget.type === "participant" &&
+                          selectedParticipantDisplayName
+                            ? `Replying to ${selectedParticipantDisplayName}`
+                            : activeChannel
+                              ? `Sending to ${activeChannel.name}`
+                              : "Select a room or user to chat"}
+                        </Text>
+                        <Button size="1" type="submit" disabled={!canSendChat}>
                           Send
                         </Button>
                       </Flex>
-                    </form>
-                  </Flex>
-                </Card>
-              </Flex>
-            ) : null}
-
-            {workspaceView === "voice" ? (
-              <Grid columns={{ initial: "1", lg: "2" }} gap="3">
-                <Card className="section-card compact-panel fade-in delay-2">
-                  <Flex direction="column" gap="3">
-                    <Flex align="center" justify="between" gap="2" wrap="wrap">
-                      <Text
-                        size="2"
-                        weight="bold"
-                        title="Preset DSP profiles for different environments"
-                      >
-                        Voice chain
-                      </Text>
-                      <Flex gap="2" wrap="wrap">
-                        {audioPresets.map((preset) => (
-                          <Button
-                            key={preset.label}
-                            size="1"
-                            variant="soft"
-                            title={preset.description}
-                            onClick={() => {
-                              applyPreset(preset.settings);
-                            }}
-                          >
-                            {preset.label}
-                          </Button>
-                        ))}
-                      </Flex>
                     </Flex>
-                    <Flex direction="column" gap="2">
+                  </form>
+                </Flex>
+              </Card>
+
+              <Card className="section-card compact-panel legacy-dock-panel fade-in delay-3">
+                <div ref={diagnosticsSectionRef}>
+                  <Flex direction="column" gap="2">
+                    <SectionHeader
+                      title="Self / Configure"
+                      subtitle="Voice controls, transport, and preferences"
+                      action={
+                        <Button
+                          size="1"
+                          variant={
+                            appState.preferences.showLatencyDetails
+                              ? "solid"
+                              : "soft"
+                          }
+                          onClick={() => {
+                            void updatePreferences({
+                              showLatencyDetails:
+                                !appState.preferences.showLatencyDetails,
+                            });
+                          }}
+                        >
+                          {appState.preferences.showLatencyDetails ? "Hide" : "Show"}
+                        </Button>
+                      }
+                    />
+                    <Flex align="center" justify="between" gap="2">
+                      <Text size="1">Input</Text>
+                      <select
+                        className="device-select legacy-compact-select"
+                        value={audioDevices.selectedInputId}
+                        onChange={(event) => {
+                          const nextValue = event.target.value;
+                          setSelectedInputId(nextValue);
+                          void updateAudioSettings({ inputDeviceId: nextValue });
+                        }}
+                        disabled={!audioDevices.supported}
+                      >
+                        {audioDevices.inputs.map((device) => (
+                          <option key={device.id} value={device.id}>
+                            {device.label}
+                          </option>
+                        ))}
+                      </select>
+                    </Flex>
+                    <Flex align="center" justify="between" gap="2">
+                      <Text size="1">Output</Text>
+                      <select
+                        className="device-select legacy-compact-select"
+                        value={audioDevices.selectedOutputId}
+                        onChange={(event) => {
+                          const nextValue = event.target.value;
+                          setSelectedOutputId(nextValue);
+                          void updateAudioSettings({ outputDeviceId: nextValue });
+                        }}
+                        disabled={!audioDevices.supported}
+                      >
+                        {audioDevices.outputs.map((device) => (
+                          <option key={device.id} value={device.id}>
+                            {device.label}
+                          </option>
+                        ))}
+                      </select>
+                    </Flex>
+                    <Flex className="compact-setting-row" align="center" justify="between" gap="2">
+                      <Text size="1">Capture enabled</Text>
+                      <Switch
+                        checked={appState.audio.captureEnabled}
+                        onCheckedChange={(checked) => {
+                          void updateAudioSettings({ captureEnabled: checked });
+                        }}
+                      />
+                    </Flex>
+                    <Flex className="compact-setting-row" align="center" justify="between" gap="2">
+                      <Text size="1">Push to talk</Text>
+                      <Switch
+                        checked={appState.preferences.pushToTalk}
+                        onCheckedChange={(checked) => {
+                          void updatePreferences({ pushToTalk: checked });
+                        }}
+                      />
+                    </Flex>
+                    <Flex gap="1" wrap="wrap">
+                      {audioPresets.map((preset) => (
+                        <Button
+                          key={preset.label}
+                          size="1"
+                          variant="soft"
+                          title={preset.description}
+                          onClick={() => {
+                            applyPreset(preset.settings);
+                          }}
+                        >
+                          {preset.label}
+                        </Button>
+                      ))}
+                    </Flex>
+                    <Flex direction="column" gap="1">
                       {dspFeatures.map((feature) => (
                         <Flex
                           key={feature.key}
                           align="center"
                           justify="between"
-                          gap="3"
-                          className="compact-setting-row"
+                          gap="2"
                           title={feature.description}
                         >
-                          <Text size="2">{feature.label}</Text>
+                          <Text size="1">{feature.label}</Text>
                           <Switch
                             checked={dspPipeline.settings[feature.key]}
                             onCheckedChange={(enabled) => {
@@ -3131,513 +2837,79 @@ export function App() {
                         </Flex>
                       ))}
                     </Flex>
-                    <Flex align="center" justify="between" gap="2" wrap="wrap">
-                      <Text size="1" color="gray">
-                        Stages
-                      </Text>
-                      <Flex gap="1" wrap="wrap" justify="end">
-                        {dspPipeline.isBypassed ? (
-                          <Badge size="1" variant="soft" color="gray">
-                            Bypassed
-                          </Badge>
-                        ) : (
-                          dspPipeline.activeStages.map((stage) => (
-                            <Badge key={stage} size="1" variant="outline">
-                              {stage}
-                            </Badge>
-                          ))
-                        )}
-                      </Flex>
-                    </Flex>
-                  </Flex>
-                </Card>
-
-                <Card className="section-card compact-panel fade-in delay-2">
-                  <Flex direction="column" gap="3">
-                    <Flex align="center" justify="between" gap="2" wrap="wrap">
-                      <Text
-                        size="2"
-                        weight="bold"
-                        title="Renderer-driven live session controls"
-                      >
-                        Live controls
-                      </Text>
-                      <Flex gap="2" wrap="wrap">
-                        <QuickAction
-                          title="Mute"
-                          description={
-                            appState.audio.selfMuted
-                              ? "Unmute microphone"
-                              : quickActionTalkModeLabel
-                          }
-                          icon={<SpeakerOffIcon />}
-                          active={appState.audio.selfMuted}
-                          onClick={() => {
-                            void updateAudioSettings({
-                              selfMuted: !appState.audio.selfMuted,
-                            });
-                          }}
-                        />
-                        <QuickAction
-                          title="Push to talk"
-                          description={
-                            appState.preferences.pushToTalk
-                              ? `Switch to voice activation · ${pushToTalkShortcutLabel}`
-                              : "Require a hold-to-speak workflow"
-                          }
-                          icon={<PersonIcon />}
-                          active={appState.preferences.pushToTalk}
-                          onClick={() => {
-                            void updatePreferences({
-                              pushToTalk: !appState.preferences.pushToTalk,
-                            });
-                          }}
-                        />
-                        <QuickAction
-                          title="Output"
-                          description="Route back to the system output"
-                          icon={<SpeakerLoudIcon />}
-                          active={
-                            appState.audio.outputDeviceId === SYSTEM_DEFAULT_DEVICE_ID
-                          }
-                          onClick={() => {
-                            void updateAudioSettings({
-                              outputDeviceId: SYSTEM_DEFAULT_DEVICE_ID,
-                            });
-                          }}
-                        />
-                        <QuickAction
-                          title="Latency"
-                          description={
-                            appState.preferences.showLatencyDetails
-                              ? "Hide diagnostics"
-                              : latencyQuickActionLabel
-                          }
-                          icon={<LightningBoltIcon />}
-                          active={appState.preferences.showLatencyDetails}
-                          onClick={() => {
-                            void updatePreferences({
-                              showLatencyDetails:
-                                !appState.preferences.showLatencyDetails,
-                            });
-                          }}
-                        />
-                        <QuickAction
-                          title="Rooms"
-                          description={
-                            nextNavigableChannel
-                              ? `Move to ${nextNavigableChannel.name}`
-                              : activeChannel
-                                ? `Stay in ${activeChannel.name}`
-                                : "Connect to browse rooms"
-                          }
-                          icon={<ChatBubbleIcon />}
-                          disabled={!nextNavigableChannel}
-                          onClick={() => {
-                            void cycleChannel();
-                          }}
-                        />
-                      </Flex>
-                    </Flex>
-
-                    <div ref={diagnosticsSectionRef}>
-                      <Flex direction="column" gap="2">
-                        <Flex align="center" justify="between" gap="2" wrap="wrap">
-                          <Text
-                            size="2"
-                            weight="bold"
-                            title="Round-trip, jitter, packet loss, and export tools"
-                          >
-                            Diagnostics
-                          </Text>
-                          <Flex gap="2" wrap="wrap">
-                            <Button
-                              size="1"
-                              variant={
-                                appState.preferences.showLatencyDetails
-                                  ? "solid"
-                                  : "soft"
-                              }
-                              onClick={() => {
-                                void updatePreferences({
-                                  showLatencyDetails:
-                                    !appState.preferences.showLatencyDetails,
-                                });
-                              }}
-                            >
-                              {appState.preferences.showLatencyDetails
-                                ? "Hide"
-                                : "Show"}
-                            </Button>
-                            <Button
-                              size="1"
-                              variant="soft"
-                              title="Export structured logs plus network and audio diagnostics"
-                              onClick={() => {
-                                void exportDiagnostics();
-                              }}
-                              disabled={
-                                !window.app?.exportDiagnostics || isExportingDiagnostics
-                              }
-                            >
-                              <DownloadIcon />
-                              {isExportingDiagnostics ? "Exporting…" : "Export"}
-                            </Button>
-                          </Flex>
-                        </Flex>
-                        {appState.preferences.showLatencyDetails ? (
-                          <Grid columns={{ initial: "1", sm: "2" }} gap="2">
-                            <Text size="2">
-                              Latency: {appState.telemetry.latencyMs ?? "—"} ms
-                            </Text>
-                            <Text size="2">
-                              Jitter: {appState.telemetry.jitterMs ?? "—"} ms
-                            </Text>
-                            <Text size="2">
-                              Packet loss: {appState.telemetry.packetLoss ?? "—"}%
-                            </Text>
-                            <Text size="2">
-                              Transport: {describeTransportStatus(voiceTransportStatus)}
-                            </Text>
-                            <Text size="2">
-                              Loopback RTT:{" "}
-                              {voiceTransportStatus?.averageRoundTripMs ?? "—"} ms
-                            </Text>
-                            <Text size="2">
-                              Packets: {voiceTransportStatus?.packetsSent ?? 0} /{" "}
-                              {voiceTransportStatus?.packetsReceived ?? 0}
-                            </Text>
-                          </Grid>
-                        ) : null}
-                        {diagnosticsMessage ? (
-                          <Text size="1" color="green">
-                            {diagnosticsMessage}
-                          </Text>
-                        ) : null}
-                        {diagnosticsError ? (
-                          <Text size="1" color="ruby">
-                            {diagnosticsError}
-                          </Text>
-                        ) : null}
-                      </Flex>
-                    </div>
-
-                    <Separator size="4" />
-                    <Flex direction="column" gap="2">
-                      <Flex align="center" justify="between" gap="2" wrap="wrap">
-                        <Text
-                          size="2"
-                          weight="bold"
-                          title="Authenticated handshake and encrypted UDP self-test"
-                        >
-                          Secure transport
+                    {appState.preferences.showLatencyDetails ? (
+                      <Flex direction="column" gap="1">
+                        <Text size="1" color="gray">
+                          Latency: {appState.telemetry.latencyMs ?? "—"} ms
                         </Text>
-                        <Flex gap="2" wrap="wrap">
-                          <Button
-                            size="1"
-                            variant="solid"
-                            onClick={() => {
-                              void runSelfTest();
-                            }}
-                            disabled={
-                              !window.app?.runSecureVoiceSelfTest ||
-                              handshakeState === "running"
-                            }
-                          >
-                            {handshakeState === "running" ? "Running…" : "Self-test"}
-                          </Button>
-                          <Button size="1" variant="soft" disabled>
-                            {window.app?.runSecureVoiceSelfTest
-                              ? "Electron ready"
-                              : "Electron only"}
-                          </Button>
-                        </Flex>
-                      </Flex>
-                      {selfTestResult ? (
-                        <Grid columns={{ initial: "1", sm: "2" }} gap="2">
-                          <Text size="2" style={{ wordBreak: "break-all" }}>
-                            ID: {selfTestResult.sessionId}
-                          </Text>
-                          <Text size="2" style={{ wordBreak: "break-all" }}>
-                            Echo: {selfTestResult.echoedPayload}
-                          </Text>
-                          <Text size="1" color="gray">
-                            {selfTestResult.cipherSuite}
-                          </Text>
-                        </Grid>
-                      ) : null}
-                      {selfTestError ? (
-                        <Text size="2" color="ruby">
-                          {selfTestError}
+                        <Text size="1" color="gray">
+                          Jitter: {appState.telemetry.jitterMs ?? "—"} ms
                         </Text>
-                      ) : null}
-                    </Flex>
-                  </Flex>
-                </Card>
-              </Grid>
-            ) : null}
-
-            {workspaceView === "settings" ? (
-              <Card className="section-card compact-panel fade-in delay-3">
-                <Flex direction="column" gap="3">
-                  <Flex align="center" justify="between" gap="2" wrap="wrap">
-                    <Text
-                      size="2"
-                      weight="bold"
-                      title="Saved with recent server details"
-                    >
-                      Preferences
-                    </Text>
+                        <Text size="1" color="gray">
+                          Packet loss: {appState.telemetry.packetLoss ?? "—"}%
+                        </Text>
+                        <Text size="1" color="gray">
+                          Transport: {describeTransportStatus(voiceTransportStatus)}
+                        </Text>
+                        <Text size="1" color="gray">
+                          {formatTransportActivity(voiceTransportStatus)}
+                        </Text>
+                      </Flex>
+                    ) : null}
                     <Flex gap="1" wrap="wrap">
-                      <Badge size="1" variant="soft">
-                        {favoriteServers.length} favorites
-                      </Badge>
-                      <Badge size="1" variant="soft" color="gray">
-                        {appState.recentServers.length} recent
-                      </Badge>
-                    </Flex>
-                  </Flex>
-                  <Flex direction="column" gap="2">
-                    <Flex
-                      align="center"
-                      justify="between"
-                      gap="3"
-                      className="compact-setting-row"
-                      title="Require a hold-to-speak workflow"
-                    >
-                      <Text size="2">Push to talk</Text>
-                      <Switch
-                        checked={appState.preferences.pushToTalk}
-                        onCheckedChange={(checked) => {
-                          void updatePreferences({ pushToTalk: checked });
+                      <Button
+                        size="1"
+                        variant="soft"
+                        onClick={() => {
+                          void exportDiagnostics();
                         }}
-                      />
-                    </Flex>
-                    <label
-                      className="device-field"
-                      title={`Press any key to set push to talk. Current switch state: ${pushToTalkPressed ? "Held" : "Released"}.`}
-                    >
-                      <Text size="1" color="gray">
-                        PTT shortcut
-                      </Text>
-                      <input
-                        className="device-select"
-                        type="text"
-                        value={pushToTalkShortcutLabel}
-                        readOnly
-                        onFocus={(event) => {
-                          event.currentTarget.select();
-                        }}
-                        onKeyDown={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-
-                          if (
-                            event.key === "Backspace" ||
-                            event.key === "Delete"
-                          ) {
-                            void updatePreferences({
-                              pushToTalkShortcut: DEFAULT_PUSH_TO_TALK_SHORTCUT,
-                            });
-                            return;
-                          }
-
-                          const nextShortcut = shortcutFromKeyboardEvent(
-                            event.nativeEvent,
-                          );
-                          if (!nextShortcut) {
-                            return;
-                          }
-
-                          void updatePreferences({
-                            pushToTalkShortcut: nextShortcut,
-                          });
-                        }}
-                      />
-                    </label>
-                  </Flex>
-
-                  <Flex direction="column" gap="2">
-                    <Flex align="center" justify="between" gap="2" wrap="wrap">
-                      <Text
-                        size="2"
-                        weight="bold"
-                        title="Quick action shortcut mappings"
+                        disabled={!window.app?.exportDiagnostics || isExportingDiagnostics}
                       >
-                        Shortcuts
-                      </Text>
-                      <Flex gap="2" wrap="wrap">
-                        <Button
-                          variant="soft"
-                          size="1"
-                          onClick={addShortcutBinding}
-                          disabled={
-                            shortcutBindings.length >= shortcutTargetOptions.length
-                          }
-                        >
-                          Add
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="1"
-                          onClick={() => {
-                            updateShortcutBindings([]);
-                          }}
-                          disabled={shortcutBindings.length === 0}
-                        >
-                          Clear
-                        </Button>
-                      </Flex>
+                        <DownloadIcon />
+                        {isExportingDiagnostics ? "Exporting…" : "Export"}
+                      </Button>
+                      <Button
+                        size="1"
+                        variant="soft"
+                        onClick={() => {
+                          void runSelfTest();
+                        }}
+                        disabled={
+                          !window.app?.runSecureVoiceSelfTest ||
+                          handshakeState === "running"
+                        }
+                      >
+                        {handshakeState === "running" ? "Running…" : "Self-test"}
+                      </Button>
                     </Flex>
-                    {shortcutBindings.length === 0 ? (
-                      <Text size="1" color="gray">
-                        No quick-action shortcuts configured yet.
+                    {selfTestResult ? (
+                      <Text size="1" color="gray" style={{ wordBreak: "break-all" }}>
+                        {selfTestResult.sessionId} · {selfTestResult.cipherSuite}
                       </Text>
-                    ) : (
-                      shortcutBindings.map((binding) => {
-                        const targetOption = getShortcutTargetOption(binding.target);
-
-                        return (
-                          <Flex
-                            key={binding.target}
-                            className="compact-binding-row"
-                            align="center"
-                            gap="2"
-                            wrap="wrap"
-                            title={
-                              targetOption?.description ??
-                              "Route the shortcut to a quick action target."
-                            }
-                          >
-                            <select
-                              className="device-select compact-binding-control"
-                              value={binding.target}
-                              onChange={(event) => {
-                                updateShortcutBindingTarget(
-                                  binding.target,
-                                  event.target
-                                    .value as AppClientShortcutBinding["target"],
-                                );
-                              }}
-                            >
-                              {shortcutTargetOptions.map((option) => (
-                                <option
-                                  key={option.value}
-                                  value={option.value}
-                                  disabled={
-                                    option.value !== binding.target &&
-                                    shortcutBindings.some(
-                                      (candidate) =>
-                                        candidate.target === option.value,
-                                    )
-                                  }
-                                >
-                                  {option.label}
-                                </option>
-                              ))}
-                            </select>
-                            <input
-                              className="device-select compact-binding-control"
-                              type="text"
-                              value={formatPushToTalkShortcut(binding.shortcut)}
-                              readOnly
-                              onFocus={(event) => {
-                                event.currentTarget.select();
-                              }}
-                              onKeyDown={(event) => {
-                                event.preventDefault();
-                                event.stopPropagation();
-
-                                if (
-                                  event.key === "Backspace" ||
-                                  event.key === "Delete"
-                                ) {
-                                  updateShortcutBindingShortcut(
-                                    binding.target,
-                                    getDefaultShortcutBinding(binding.target)
-                                      .shortcut,
-                                  );
-                                  return;
-                                }
-
-                                const nextShortcut = shortcutFromKeyboardEvent(
-                                  event.nativeEvent,
-                                );
-                                if (!nextShortcut) {
-                                  return;
-                                }
-
-                                updateShortcutBindingShortcut(
-                                  binding.target,
-                                  nextShortcut,
-                                );
-                              }}
-                            />
-                            <Button
-                              variant="ghost"
-                              color="ruby"
-                              size="1"
-                              onClick={() => {
-                                removeShortcutBinding(binding.target);
-                              }}
-                            >
-                              Remove
-                            </Button>
-                          </Flex>
-                        );
-                      })
-                    )}
+                    ) : null}
+                    {diagnosticsMessage ? (
+                      <Text size="1" color="green">
+                        {diagnosticsMessage}
+                      </Text>
+                    ) : null}
+                    {diagnosticsError ? (
+                      <Text size="1" color="ruby">
+                        {diagnosticsError}
+                      </Text>
+                    ) : null}
+                    {selfTestError ? (
+                      <Text size="1" color="ruby">
+                        {selfTestError}
+                      </Text>
+                    ) : null}
                   </Flex>
-
-                  <Flex
-                    align="center"
-                    justify="between"
-                    gap="3"
-                    className="compact-setting-row"
-                    title="Retry the last server automatically"
-                  >
-                    <Text size="2">Auto reconnect</Text>
-                    <Switch
-                      checked={appState.preferences.autoReconnect}
-                      onCheckedChange={(checked) => {
-                        void updatePreferences({ autoReconnect: checked });
-                      }}
-                    />
-                  </Flex>
-                  <Flex
-                    align="center"
-                    justify="between"
-                    gap="3"
-                    className="compact-setting-row"
-                    title="Show desktop notices for room changes"
-                  >
-                    <Text size="2">Notifications</Text>
-                    <Switch
-                      checked={appState.preferences.notificationsEnabled}
-                      onCheckedChange={(checked) => {
-                        void updatePreferences({
-                          notificationsEnabled: checked,
-                        });
-                      }}
-                    />
-                  </Flex>
-                  <Text size="1" color="gray">
-                    Favorites:{" "}
-                    {favoriteServers.length > 0
-                      ? favoriteServers
-                          .map((favoriteServer) => favoriteServer.label)
-                          .join(" • ")
-                      : "None yet"}
-                  </Text>
-                  <Text size="1" color="gray">
-                    Recent:{" "}
-                    {appState.recentServers.length > 0
-                      ? appState.recentServers.join(" • ")
-                      : "None yet"}
-                  </Text>
-                </Flex>
+                </div>
               </Card>
-            ) : null}
+            </Grid>
+
+            <Card className="section-card legacy-minimal-note">
+              <Text size="1">{minimalViewNote}</Text>
+            </Card>
           </Flex>
         </main>
       </Box>
