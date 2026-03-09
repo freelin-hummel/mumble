@@ -7,7 +7,6 @@ import {
   Grid,
   Heading,
   IconButton,
-  Separator,
   Switch,
   Text,
   TextField,
@@ -15,15 +14,17 @@ import {
 } from "@radix-ui/themes";
 import {
   ChatBubbleIcon,
+  Cross2Icon,
   DownloadIcon,
   GlobeIcon,
   LightningBoltIcon,
+  MinusIcon,
   OpenInNewWindowIcon,
   PersonIcon,
-  SpeakerLoudIcon,
   SpeakerOffIcon,
 } from "@radix-ui/react-icons";
 import {
+  type PointerEvent as ReactPointerEvent,
   useCallback,
   useEffect,
   useMemo,
@@ -168,11 +169,73 @@ const BASE_CHANNEL_PADDING = 12;
 const CHANNEL_INDENT_PER_LEVEL = 12;
 const PARTICIPANT_INDENT_OFFSET = 18;
 const MAX_ACTIVITY_LOG_MESSAGES = 12;
+const DOCK_PANEL_MIN_WIDTH = 240;
+const DOCK_PANEL_MIN_HEIGHT = 180;
+const DOCK_PANEL_MINIMIZED_HEIGHT = 48;
 const PREFERRED_VOICE_CAPTURE_MIME_TYPES = [
   "audio/webm;codecs=opus",
   "audio/webm",
   "audio/ogg;codecs=opus",
 ] as const;
+
+type DockPanelId = "log" | "chat" | "self";
+
+type DockPanelLayout = {
+  offsetX: number;
+  offsetY: number;
+  width: number | null;
+  height: number;
+  isClosed: boolean;
+  isMinimized: boolean;
+  zIndex: number;
+};
+
+type DockPanelInteraction = {
+  panelId: DockPanelId;
+  mode: "move" | "resize";
+  startClientX: number;
+  startClientY: number;
+  startOffsetX: number;
+  startOffsetY: number;
+  startWidth: number;
+  startHeight: number;
+};
+
+const createInitialDockPanelLayouts = (): Record<DockPanelId, DockPanelLayout> => ({
+  log: {
+    offsetX: 0,
+    offsetY: 0,
+    width: null,
+    height: 300,
+    isClosed: false,
+    isMinimized: false,
+    zIndex: 1,
+  },
+  chat: {
+    offsetX: 0,
+    offsetY: 0,
+    width: null,
+    height: 300,
+    isClosed: false,
+    isMinimized: false,
+    zIndex: 2,
+  },
+  self: {
+    offsetX: 0,
+    offsetY: 0,
+    width: null,
+    height: 300,
+    isClosed: false,
+    isMinimized: false,
+    zIndex: 3,
+  },
+});
+
+const DOCK_PANEL_TITLES: Record<DockPanelId, string> = {
+  log: "Log",
+  chat: "Chatbar",
+  self: "Self / Configure",
+};
 
 const statusCopy: Record<AppClientConnectionState["status"], string> = {
   disconnected: "Disconnected",
@@ -377,8 +440,18 @@ export function App() {
       ? null
       : loadStoredBase16Theme(window.localStorage),
   );
+  const [dockPanels, setDockPanels] = useState<Record<DockPanelId, DockPanelLayout>>(
+    () => createInitialDockPanelLayouts(),
+  );
+  const [activeDockInteraction, setActiveDockInteraction] =
+    useState<DockPanelInteraction | null>(null);
   const outputPreviewRef = useRef<HTMLAudioElement>(null);
   const diagnosticsSectionRef = useRef<HTMLDivElement>(null);
+  const dockPanelRefs = useRef<Record<DockPanelId, HTMLDivElement | null>>({
+    log: null,
+    chat: null,
+    self: null,
+  });
   const pushToTalkPressedRef = useRef(false);
   const voiceActivationRef = useRef(voiceActivation);
   const voiceCaptureMimeTypeRef = useRef<string | null>(null);
@@ -1749,6 +1822,63 @@ export function App() {
     handleShortcutAction,
     shortcutBindings,
   ]);
+  useEffect(() => {
+    if (!activeDockInteraction) {
+      return undefined;
+    }
+
+    const handlePointerMove = (event: PointerEvent) => {
+      const deltaX = event.clientX - activeDockInteraction.startClientX;
+      const deltaY = event.clientY - activeDockInteraction.startClientY;
+
+      setDockPanels((currentPanels) => ({
+        ...currentPanels,
+        [activeDockInteraction.panelId]: {
+          ...currentPanels[activeDockInteraction.panelId],
+          offsetX:
+            activeDockInteraction.mode === "move"
+              ? activeDockInteraction.startOffsetX + deltaX
+              : currentPanels[activeDockInteraction.panelId].offsetX,
+          offsetY:
+            activeDockInteraction.mode === "move"
+              ? activeDockInteraction.startOffsetY + deltaY
+              : currentPanels[activeDockInteraction.panelId].offsetY,
+          width:
+            activeDockInteraction.mode === "resize"
+              ? Math.max(
+                  DOCK_PANEL_MIN_WIDTH,
+                  activeDockInteraction.startWidth + deltaX,
+                )
+              : currentPanels[activeDockInteraction.panelId].width,
+          height:
+            activeDockInteraction.mode === "resize"
+              ? Math.max(
+                  DOCK_PANEL_MIN_HEIGHT,
+                  activeDockInteraction.startHeight + deltaY,
+                )
+              : currentPanels[activeDockInteraction.panelId].height,
+        },
+      }));
+    };
+    const handlePointerUp = () => {
+      setActiveDockInteraction(null);
+    };
+
+    const previousUserSelect = document.body.style.userSelect;
+    const previousCursor = document.body.style.cursor;
+    document.body.style.userSelect = "none";
+    document.body.style.cursor =
+      activeDockInteraction.mode === "move" ? "grabbing" : "nwse-resize";
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+
+    return () => {
+      document.body.style.userSelect = previousUserSelect;
+      document.body.style.cursor = previousCursor;
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+  }, [activeDockInteraction]);
 
   const openDiagnostics = () => {
     if (!appState.preferences.showLatencyDetails) {
@@ -1805,6 +1935,91 @@ export function App() {
     setThemeError(null);
     setThemeMessage("Default dark theme restored.");
   }, []);
+  const bringDockPanelToFront = useCallback((panelId: DockPanelId) => {
+    setDockPanels((currentPanels) => {
+      const highestZIndex = Math.max(
+        ...Object.values(currentPanels).map((panel) => panel.zIndex),
+      );
+      if (currentPanels[panelId].zIndex === highestZIndex) {
+        return currentPanels;
+      }
+
+      return {
+        ...currentPanels,
+        [panelId]: {
+          ...currentPanels[panelId],
+          zIndex: highestZIndex + 1,
+        },
+      };
+    });
+  }, []);
+  const closeDockPanel = useCallback((panelId: DockPanelId) => {
+    setDockPanels((currentPanels) => ({
+      ...currentPanels,
+      [panelId]: {
+        ...currentPanels[panelId],
+        isClosed: true,
+      },
+    }));
+  }, []);
+  const restoreDockPanel = useCallback((panelId: DockPanelId) => {
+    bringDockPanelToFront(panelId);
+    setDockPanels((currentPanels) => ({
+      ...currentPanels,
+      [panelId]: {
+        ...currentPanels[panelId],
+        isClosed: false,
+        isMinimized: false,
+      },
+    }));
+  }, [bringDockPanelToFront]);
+  const toggleDockPanelMinimized = useCallback((panelId: DockPanelId) => {
+    bringDockPanelToFront(panelId);
+    setDockPanels((currentPanels) => ({
+      ...currentPanels,
+      [panelId]: {
+        ...currentPanels[panelId],
+        isMinimized: !currentPanels[panelId].isMinimized,
+      },
+    }));
+  }, [bringDockPanelToFront]);
+  const startDockPanelInteraction = useCallback(
+    (
+      panelId: DockPanelId,
+      mode: DockPanelInteraction["mode"],
+      event: ReactPointerEvent<HTMLElement>,
+    ) => {
+      if (
+        event.button !== 0 ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.shiftKey
+      ) {
+        return;
+      }
+
+      const panelElement = dockPanelRefs.current[panelId];
+      if (!panelElement) {
+        return;
+      }
+
+      const panel = dockPanels[panelId];
+      bringDockPanelToFront(panelId);
+      setActiveDockInteraction({
+        panelId,
+        mode,
+        startClientX: event.clientX,
+        startClientY: event.clientY,
+        startOffsetX: panel.offsetX,
+        startOffsetY: panel.offsetY,
+        startWidth: panel.width ?? panelElement.getBoundingClientRect().width,
+        startHeight: panel.height,
+      });
+      event.preventDefault();
+    },
+    [bringDockPanelToFront, dockPanels],
+  );
 
   const sendChatMessage = async () => {
     if (!chatDraft.trim()) {
@@ -1933,6 +2148,112 @@ export function App() {
     appState.connection.status === "connected"
       ? `Connected to ${appState.connection.serverAddress || serverAddress || "server"} as ${appState.connection.nickname || nickname || "guest"} · ${participantsSubtitle.toLowerCase()}`
       : "You are currently in minimal view but not connected to a server. Use the toolbar to connect or open the talking popout.";
+  const closedDockPanels = (Object.keys(dockPanels) as DockPanelId[]).filter(
+    (panelId) => dockPanels[panelId].isClosed,
+  );
+  const renderDockPanel = (
+    panelId: DockPanelId,
+    subtitle: string,
+    delayClass: string,
+    content: JSX.Element,
+  ) => {
+    const panel = dockPanels[panelId];
+    if (panel.isClosed) {
+      return null;
+    }
+
+    const title = DOCK_PANEL_TITLES[panelId];
+
+    return (
+      <Box
+        key={panelId}
+        ref={(element) => {
+          dockPanelRefs.current[panelId] = element;
+        }}
+        className={`legacy-dock-panel-shell${panel.isMinimized ? " is-minimized" : ""}`}
+        style={{
+          transform: `translate(${panel.offsetX}px, ${panel.offsetY}px)`,
+          zIndex: panel.zIndex,
+          width: panel.width ? `${panel.width}px` : undefined,
+          height: `${panel.isMinimized ? DOCK_PANEL_MINIMIZED_HEIGHT : panel.height}px`,
+        }}
+        onPointerDown={() => {
+          bringDockPanelToFront(panelId);
+        }}
+      >
+        <Card className={`section-card compact-panel legacy-dock-panel fade-in ${delayClass}`}>
+          <Flex
+            className="legacy-dock-panel-header"
+            align="center"
+            justify="between"
+            gap="2"
+            onPointerDown={(event) => {
+              startDockPanelInteraction(panelId, "move", event);
+            }}
+          >
+            <Flex direction="column" gap="1">
+              <Text size="2" weight="bold">
+                {title}
+              </Text>
+              <Text size="1" color="gray">
+                {subtitle}
+              </Text>
+            </Flex>
+            <Flex align="center" gap="1" className="legacy-dock-panel-controls">
+              <IconButton
+                size="1"
+                variant="ghost"
+                type="button"
+                aria-label={
+                  panel.isMinimized ? `Restore ${title}` : `Minimize ${title}`
+                }
+                onPointerDown={(event) => {
+                  event.stopPropagation();
+                }}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  toggleDockPanelMinimized(panelId);
+                }}
+              >
+                {panel.isMinimized ? <OpenInNewWindowIcon /> : <MinusIcon />}
+              </IconButton>
+              <IconButton
+                size="1"
+                variant="ghost"
+                color="ruby"
+                type="button"
+                aria-label={`Close ${title}`}
+                onPointerDown={(event) => {
+                  event.stopPropagation();
+                }}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  closeDockPanel(panelId);
+                }}
+              >
+                <Cross2Icon />
+              </IconButton>
+            </Flex>
+          </Flex>
+          {!panel.isMinimized ? (
+            <Flex direction="column" gap="2" className="legacy-dock-panel-body">
+              {content}
+            </Flex>
+          ) : null}
+          {!panel.isMinimized ? (
+            <button
+              type="button"
+              className="legacy-dock-panel-resize-handle"
+              aria-label={`Resize ${title}`}
+              onPointerDown={(event) => {
+                startDockPanelInteraction(panelId, "resize", event);
+              }}
+            />
+          ) : null}
+        </Card>
+      </Box>
+    );
+  };
 
   if (isTalkingPopout) {
     return (
@@ -2571,9 +2892,11 @@ export function App() {
             </Card>
 
             <Grid columns={{ initial: "1", md: "3" }} gap="2" className="legacy-dock-grid">
-              <Card className="section-card compact-panel legacy-dock-panel fade-in delay-1">
-                <Flex direction="column" gap="2">
-                  <SectionHeader title="Log" subtitle="Activity log" />
+              {renderDockPanel(
+                "log",
+                "Activity log",
+                "delay-1",
+                <>
                   {activityLogMessages.length > 0 ? (
                     <Flex direction="column" gap="1" className="legacy-log-list">
                       {activityLogMessages.map((message) => (
@@ -2600,12 +2923,14 @@ export function App() {
                       Recent activity, connection notices, and chat will appear here.
                     </Text>
                   )}
-                </Flex>
-              </Card>
+                </>,
+              )}
 
-              <Card className="section-card compact-panel legacy-dock-panel fade-in delay-2">
-                <Flex direction="column" gap="2">
-                  <SectionHeader title="Chatbar" subtitle={chatSubtitle} />
+              {renderDockPanel(
+                "chat",
+                chatSubtitle,
+                "delay-2",
+                <>
                   {activeMessages.length > 0 ? (
                     <Flex direction="column" gap="1" className="legacy-log-list">
                       {activeMessages.slice(-4).map((message) => (
@@ -2709,16 +3034,20 @@ export function App() {
                       </Flex>
                     </Flex>
                   </form>
-                </Flex>
-              </Card>
+                </>,
+              )}
 
-              <Card className="section-card compact-panel legacy-dock-panel fade-in delay-3">
-                <div ref={diagnosticsSectionRef}>
-                  <Flex direction="column" gap="2">
-                    <SectionHeader
-                      title="Self / Configure"
-                      subtitle="Voice controls, transport, and preferences"
-                      action={
+              {renderDockPanel(
+                "self",
+                "Voice controls, transport, and preferences",
+                "delay-3",
+                <>
+                  <div ref={diagnosticsSectionRef}>
+                    <Flex direction="column" gap="2">
+                      <Flex align="center" justify="between" gap="2" wrap="wrap">
+                        <Text size="1" color="gray">
+                          Toggle diagnostics details
+                        </Text>
                         <Button
                           size="1"
                           variant={
@@ -2735,177 +3064,202 @@ export function App() {
                         >
                           {appState.preferences.showLatencyDetails ? "Hide" : "Show"}
                         </Button>
-                      }
-                    />
-                    <Flex align="center" justify="between" gap="2">
-                      <Text size="1">Input</Text>
-                      <select
-                        className="device-select legacy-compact-select"
-                        value={audioDevices.selectedInputId}
-                        onChange={(event) => {
-                          const nextValue = event.target.value;
-                          setSelectedInputId(nextValue);
-                          void updateAudioSettings({ inputDeviceId: nextValue });
-                        }}
-                        disabled={!audioDevices.supported}
-                      >
-                        {audioDevices.inputs.map((device) => (
-                          <option key={device.id} value={device.id}>
-                            {device.label}
-                          </option>
+                      </Flex>
+                      <Flex align="center" justify="between" gap="2">
+                        <Text size="1">Input</Text>
+                        <select
+                          className="device-select legacy-compact-select"
+                          value={audioDevices.selectedInputId}
+                          onChange={(event) => {
+                            const nextValue = event.target.value;
+                            setSelectedInputId(nextValue);
+                            void updateAudioSettings({ inputDeviceId: nextValue });
+                          }}
+                          disabled={!audioDevices.supported}
+                        >
+                          {audioDevices.inputs.map((device) => (
+                            <option key={device.id} value={device.id}>
+                              {device.label}
+                            </option>
+                          ))}
+                        </select>
+                      </Flex>
+                      <Flex align="center" justify="between" gap="2">
+                        <Text size="1">Output</Text>
+                        <select
+                          className="device-select legacy-compact-select"
+                          value={audioDevices.selectedOutputId}
+                          onChange={(event) => {
+                            const nextValue = event.target.value;
+                            setSelectedOutputId(nextValue);
+                            void updateAudioSettings({ outputDeviceId: nextValue });
+                          }}
+                          disabled={!audioDevices.supported}
+                        >
+                          {audioDevices.outputs.map((device) => (
+                            <option key={device.id} value={device.id}>
+                              {device.label}
+                            </option>
+                          ))}
+                        </select>
+                      </Flex>
+                      <Flex className="compact-setting-row" align="center" justify="between" gap="2">
+                        <Text size="1">Capture enabled</Text>
+                        <Switch
+                          checked={appState.audio.captureEnabled}
+                          onCheckedChange={(checked) => {
+                            void updateAudioSettings({ captureEnabled: checked });
+                          }}
+                        />
+                      </Flex>
+                      <Flex className="compact-setting-row" align="center" justify="between" gap="2">
+                        <Text size="1">Push to talk</Text>
+                        <Switch
+                          checked={appState.preferences.pushToTalk}
+                          onCheckedChange={(checked) => {
+                            void updatePreferences({ pushToTalk: checked });
+                          }}
+                        />
+                      </Flex>
+                      <Flex gap="1" wrap="wrap">
+                        {audioPresets.map((preset) => (
+                          <Button
+                            key={preset.label}
+                            size="1"
+                            variant="soft"
+                            title={preset.description}
+                            onClick={() => {
+                              applyPreset(preset.settings);
+                            }}
+                          >
+                            {preset.label}
+                          </Button>
                         ))}
-                      </select>
-                    </Flex>
-                    <Flex align="center" justify="between" gap="2">
-                      <Text size="1">Output</Text>
-                      <select
-                        className="device-select legacy-compact-select"
-                        value={audioDevices.selectedOutputId}
-                        onChange={(event) => {
-                          const nextValue = event.target.value;
-                          setSelectedOutputId(nextValue);
-                          void updateAudioSettings({ outputDeviceId: nextValue });
-                        }}
-                        disabled={!audioDevices.supported}
-                      >
-                        {audioDevices.outputs.map((device) => (
-                          <option key={device.id} value={device.id}>
-                            {device.label}
-                          </option>
+                      </Flex>
+                      <Flex direction="column" gap="1">
+                        {dspFeatures.map((feature) => (
+                          <Flex
+                            key={feature.key}
+                            align="center"
+                            justify="between"
+                            gap="2"
+                            title={feature.description}
+                          >
+                            <Text size="1">{feature.label}</Text>
+                            <Switch
+                              checked={dspPipeline.settings[feature.key]}
+                              onCheckedChange={(enabled) => {
+                                const nextPipeline = setDspFeature(
+                                  dspPipeline.settings,
+                                  feature.key,
+                                  enabled,
+                                );
+                                setDspPipelineState(nextPipeline);
+                                void updatePreferences({
+                                  voiceProcessing: persistDspSettings(
+                                    nextPipeline.settings,
+                                  ),
+                                });
+                              }}
+                            />
+                          </Flex>
                         ))}
-                      </select>
-                    </Flex>
-                    <Flex className="compact-setting-row" align="center" justify="between" gap="2">
-                      <Text size="1">Capture enabled</Text>
-                      <Switch
-                        checked={appState.audio.captureEnabled}
-                        onCheckedChange={(checked) => {
-                          void updateAudioSettings({ captureEnabled: checked });
-                        }}
-                      />
-                    </Flex>
-                    <Flex className="compact-setting-row" align="center" justify="between" gap="2">
-                      <Text size="1">Push to talk</Text>
-                      <Switch
-                        checked={appState.preferences.pushToTalk}
-                        onCheckedChange={(checked) => {
-                          void updatePreferences({ pushToTalk: checked });
-                        }}
-                      />
-                    </Flex>
-                    <Flex gap="1" wrap="wrap">
-                      {audioPresets.map((preset) => (
+                      </Flex>
+                      {appState.preferences.showLatencyDetails ? (
+                        <Flex direction="column" gap="1">
+                          <Text size="1" color="gray">
+                            Latency: {appState.telemetry.latencyMs ?? "—"} ms
+                          </Text>
+                          <Text size="1" color="gray">
+                            Jitter: {appState.telemetry.jitterMs ?? "—"} ms
+                          </Text>
+                          <Text size="1" color="gray">
+                            Packet loss: {appState.telemetry.packetLoss ?? "—"}%
+                          </Text>
+                          <Text size="1" color="gray">
+                            Transport: {describeTransportStatus(voiceTransportStatus)}
+                          </Text>
+                          <Text size="1" color="gray">
+                            {formatTransportActivity(voiceTransportStatus)}
+                          </Text>
+                        </Flex>
+                      ) : null}
+                      <Flex gap="1" wrap="wrap">
                         <Button
-                          key={preset.label}
                           size="1"
                           variant="soft"
-                          title={preset.description}
                           onClick={() => {
-                            applyPreset(preset.settings);
+                            void exportDiagnostics();
                           }}
+                          disabled={
+                            !window.app?.exportDiagnostics || isExportingDiagnostics
+                          }
                         >
-                          {preset.label}
+                          <DownloadIcon />
+                          {isExportingDiagnostics ? "Exporting…" : "Export"}
                         </Button>
-                      ))}
-                    </Flex>
-                    <Flex direction="column" gap="1">
-                      {dspFeatures.map((feature) => (
-                        <Flex
-                          key={feature.key}
-                          align="center"
-                          justify="between"
-                          gap="2"
-                          title={feature.description}
+                        <Button
+                          size="1"
+                          variant="soft"
+                          onClick={() => {
+                            void runSelfTest();
+                          }}
+                          disabled={
+                            !window.app?.runSecureVoiceSelfTest ||
+                            handshakeState === "running"
+                          }
                         >
-                          <Text size="1">{feature.label}</Text>
-                          <Switch
-                            checked={dspPipeline.settings[feature.key]}
-                            onCheckedChange={(enabled) => {
-                              const nextPipeline = setDspFeature(
-                                dspPipeline.settings,
-                                feature.key,
-                                enabled,
-                              );
-                              setDspPipelineState(nextPipeline);
-                              void updatePreferences({
-                                voiceProcessing: persistDspSettings(
-                                  nextPipeline.settings,
-                                ),
-                              });
-                            }}
-                          />
-                        </Flex>
-                      ))}
-                    </Flex>
-                    {appState.preferences.showLatencyDetails ? (
-                      <Flex direction="column" gap="1">
-                        <Text size="1" color="gray">
-                          Latency: {appState.telemetry.latencyMs ?? "—"} ms
-                        </Text>
-                        <Text size="1" color="gray">
-                          Jitter: {appState.telemetry.jitterMs ?? "—"} ms
-                        </Text>
-                        <Text size="1" color="gray">
-                          Packet loss: {appState.telemetry.packetLoss ?? "—"}%
-                        </Text>
-                        <Text size="1" color="gray">
-                          Transport: {describeTransportStatus(voiceTransportStatus)}
-                        </Text>
-                        <Text size="1" color="gray">
-                          {formatTransportActivity(voiceTransportStatus)}
-                        </Text>
+                          {handshakeState === "running" ? "Running…" : "Self-test"}
+                        </Button>
                       </Flex>
-                    ) : null}
-                    <Flex gap="1" wrap="wrap">
-                      <Button
-                        size="1"
-                        variant="soft"
-                        onClick={() => {
-                          void exportDiagnostics();
-                        }}
-                        disabled={!window.app?.exportDiagnostics || isExportingDiagnostics}
-                      >
-                        <DownloadIcon />
-                        {isExportingDiagnostics ? "Exporting…" : "Export"}
-                      </Button>
-                      <Button
-                        size="1"
-                        variant="soft"
-                        onClick={() => {
-                          void runSelfTest();
-                        }}
-                        disabled={
-                          !window.app?.runSecureVoiceSelfTest ||
-                          handshakeState === "running"
-                        }
-                      >
-                        {handshakeState === "running" ? "Running…" : "Self-test"}
-                      </Button>
+                      {selfTestResult ? (
+                        <Text
+                          size="1"
+                          color="gray"
+                          style={{ wordBreak: "break-all" }}
+                        >
+                          {selfTestResult.sessionId} · {selfTestResult.cipherSuite}
+                        </Text>
+                      ) : null}
+                      {diagnosticsMessage ? (
+                        <Text size="1" color="green">
+                          {diagnosticsMessage}
+                        </Text>
+                      ) : null}
+                      {diagnosticsError ? (
+                        <Text size="1" color="ruby">
+                          {diagnosticsError}
+                        </Text>
+                      ) : null}
+                      {selfTestError ? (
+                        <Text size="1" color="ruby">
+                          {selfTestError}
+                        </Text>
+                      ) : null}
                     </Flex>
-                    {selfTestResult ? (
-                      <Text size="1" color="gray" style={{ wordBreak: "break-all" }}>
-                        {selfTestResult.sessionId} · {selfTestResult.cipherSuite}
-                      </Text>
-                    ) : null}
-                    {diagnosticsMessage ? (
-                      <Text size="1" color="green">
-                        {diagnosticsMessage}
-                      </Text>
-                    ) : null}
-                    {diagnosticsError ? (
-                      <Text size="1" color="ruby">
-                        {diagnosticsError}
-                      </Text>
-                    ) : null}
-                    {selfTestError ? (
-                      <Text size="1" color="ruby">
-                        {selfTestError}
-                      </Text>
-                    ) : null}
-                  </Flex>
-                </div>
-              </Card>
+                  </div>
+                </>,
+              )}
             </Grid>
+            {closedDockPanels.length > 0 ? (
+              <Flex className="legacy-dock-restore-strip" gap="2" wrap="wrap" align="center">
+                <Text size="1" color="gray">
+                  Closed panels
+                </Text>
+                {closedDockPanels.map((panelId) => (
+                  <Button
+                    key={panelId}
+                    size="1"
+                    variant="soft"
+                    onClick={() => {
+                      restoreDockPanel(panelId);
+                    }}
+                  >
+                    Restore {DOCK_PANEL_TITLES[panelId]}
+                  </Button>
+                ))}
+              </Flex>
+            ) : null}
 
             <Card className="section-card legacy-minimal-note">
               <Text size="1">{minimalViewNote}</Text>
