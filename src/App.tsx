@@ -14,6 +14,8 @@ import {
 } from "@radix-ui/themes";
 import {
   ChatBubbleIcon,
+  ChevronDownIcon,
+  ChevronUpIcon,
   Cross2Icon,
   DownloadIcon,
   GlobeIcon,
@@ -81,6 +83,10 @@ import {
   getChatViewTarget,
   getUnreadCountForTarget,
 } from "./chatState";
+import {
+  getCompactChatLogMessages,
+  shouldExpandConnectionControls,
+} from "./minimalUi";
 import {
   buildBase16ThemeVariables,
   clearStoredBase16Theme,
@@ -206,7 +212,7 @@ const createInitialDockPanelLayouts = (): Record<DockPanelId, DockPanelLayout> =
     offsetX: 0,
     offsetY: 0,
     width: null,
-    height: 300,
+    height: 260,
     isClosed: false,
     isMinimized: false,
     zIndex: 1,
@@ -215,7 +221,7 @@ const createInitialDockPanelLayouts = (): Record<DockPanelId, DockPanelLayout> =
     offsetX: 0,
     offsetY: 0,
     width: null,
-    height: 300,
+    height: 260,
     isClosed: false,
     isMinimized: false,
     zIndex: 2,
@@ -224,7 +230,7 @@ const createInitialDockPanelLayouts = (): Record<DockPanelId, DockPanelLayout> =
     offsetX: 0,
     offsetY: 0,
     width: null,
-    height: 300,
+    height: 260,
     isClosed: false,
     isMinimized: false,
     zIndex: 3,
@@ -440,6 +446,9 @@ export function App() {
       ? null
       : loadStoredBase16Theme(window.localStorage),
   );
+  const [isConnectionPanelExpanded, setIsConnectionPanelExpanded] = useState(true);
+  const [isActivityLogExpanded, setIsActivityLogExpanded] = useState(true);
+  const [isChatLogExpanded, setIsChatLogExpanded] = useState(true);
   const [dockPanels, setDockPanels] = useState<Record<DockPanelId, DockPanelLayout>>(
     () => createInitialDockPanelLayouts(),
   );
@@ -706,6 +715,12 @@ export function App() {
   useEffect(() => {
     voiceActivationRef.current = voiceActivation;
   }, [voiceActivation]);
+
+  useEffect(() => {
+    setIsConnectionPanelExpanded(
+      shouldExpandConnectionControls(appState.connection.status),
+    );
+  }, [appState.connection.status]);
 
   useEffect(() => {
     setDspPipelineState(
@@ -2144,6 +2159,10 @@ export function App() {
     () => [...appState.messages].slice(-MAX_ACTIVITY_LOG_MESSAGES).reverse(),
     [appState.messages],
   );
+  const compactChatLogMessages = useMemo(
+    () => getCompactChatLogMessages(activeMessages),
+    [activeMessages],
+  );
   const minimalViewNote =
     appState.connection.status === "connected"
       ? `Connected to ${appState.connection.serverAddress || serverAddress || "server"} as ${appState.connection.nickname || nickname || "guest"} · ${participantsSubtitle.toLowerCase()}`
@@ -2513,66 +2532,95 @@ export function App() {
                 void connectToServer();
               }}
             >
-              <Flex className="legacy-connect-strip" gap="2" wrap="wrap" align="center">
-                <TextField.Root
-                  size="2"
-                  placeholder="Server address"
-                  style={{ minWidth: 240 }}
-                  value={serverAddress}
-                  onChange={(event) => {
-                    setServerAddress(event.target.value);
-                  }}
-                  disabled={isConnectionBusy(appState.connection.status)}
-                  list="recent-servers"
-                >
-                  <TextField.Slot>
-                    <GlobeIcon />
-                  </TextField.Slot>
-                </TextField.Root>
-                <datalist id="recent-servers">
-                  {appState.recentServers.map((recentServer) => (
-                    <option key={recentServer} value={recentServer} />
-                  ))}
-                </datalist>
-                <TextField.Root
-                  size="2"
-                  placeholder="Nickname"
-                  style={{ minWidth: 180 }}
-                  value={nickname}
-                  onChange={(event) => {
-                    setNickname(event.target.value);
-                  }}
-                  disabled={isConnectionBusy(appState.connection.status)}
-                >
-                  <TextField.Slot>
-                    <ChatBubbleIcon />
-                  </TextField.Slot>
-                </TextField.Root>
-                <Button size="2" type="submit" disabled={isConnectionBusy(appState.connection.status)}>
-                  {appState.connection.status === "authenticating"
-                    ? "Authenticating…"
-                    : appState.connection.status === "connecting"
-                      ? "Joining…"
-                      : "Join"}
-                </Button>
+              <Flex className="legacy-session-strip" align="center" justify="between" gap="2" wrap="wrap">
+                <Flex align="center" gap="2" wrap="wrap">
+                  <Text size="1" color="gray">
+                    {appState.connection.serverAddress || trimmedServerAddress || "No server selected"}
+                  </Text>
+                  <Badge size="1" variant="soft">
+                    {appState.connection.nickname || nickname || "Guest"}
+                  </Badge>
+                  {favoriteServers.length > 0 || appState.recentServers.length > 0 ? (
+                    <Text size="1" color="gray">
+                      {favoriteServers.length + appState.recentServers.length} saved
+                    </Text>
+                  ) : null}
+                </Flex>
                 <Button
-                  size="2"
-                  variant="outline"
+                  size="1"
+                  variant="soft"
                   type="button"
                   onClick={() => {
-                    void rememberServer(serverAddress);
+                    setIsConnectionPanelExpanded((currentValue) => !currentValue);
                   }}
-                  disabled={
-                    isConnectionBusy(appState.connection.status) ||
-                    trimmedServerAddress.length === 0
-                  }
                 >
-                  Save
+                  {isConnectionPanelExpanded ? <ChevronUpIcon /> : <ChevronDownIcon />}
+                  {isConnectionPanelExpanded ? "Hide connection" : "Edit connection"}
                 </Button>
               </Flex>
+              {isConnectionPanelExpanded ? (
+                <Flex className="legacy-connect-strip" gap="2" wrap="wrap" align="center">
+                  <TextField.Root
+                    size="1"
+                    className="legacy-connect-field"
+                    placeholder="Server address"
+                    value={serverAddress}
+                    onChange={(event) => {
+                      setServerAddress(event.target.value);
+                    }}
+                    disabled={isConnectionBusy(appState.connection.status)}
+                    list="recent-servers"
+                  >
+                    <TextField.Slot>
+                      <GlobeIcon />
+                    </TextField.Slot>
+                  </TextField.Root>
+                  <datalist id="recent-servers">
+                    {appState.recentServers.map((recentServer) => (
+                      <option key={recentServer} value={recentServer} />
+                    ))}
+                  </datalist>
+                  <TextField.Root
+                    size="1"
+                    className="legacy-nickname-field"
+                    placeholder="Nickname"
+                    value={nickname}
+                    onChange={(event) => {
+                      setNickname(event.target.value);
+                    }}
+                    disabled={isConnectionBusy(appState.connection.status)}
+                  >
+                    <TextField.Slot>
+                      <ChatBubbleIcon />
+                    </TextField.Slot>
+                  </TextField.Root>
+                  <Button size="1" type="submit" disabled={isConnectionBusy(appState.connection.status)}>
+                    {appState.connection.status === "authenticating"
+                      ? "Authenticating…"
+                      : appState.connection.status === "connecting"
+                        ? "Joining…"
+                        : "Join"}
+                  </Button>
+                  <Button
+                    size="1"
+                    variant="outline"
+                    type="button"
+                    onClick={() => {
+                      void rememberServer(serverAddress);
+                    }}
+                    disabled={
+                      isConnectionBusy(appState.connection.status) ||
+                      trimmedServerAddress.length === 0
+                    }
+                  >
+                    Save
+                  </Button>
+                </Flex>
+              ) : null}
             </form>
 
-            {favoriteServers.length > 0 || appState.recentServers.length > 0 ? (
+            {isConnectionPanelExpanded &&
+            (favoriteServers.length > 0 || appState.recentServers.length > 0) ? (
               <Flex className="legacy-server-strip" gap="2" wrap="wrap" align="center">
                 {favoriteServers.length > 0 ? (
                   <>
@@ -2897,32 +2945,49 @@ export function App() {
                 "Activity log",
                 "delay-1",
                 <>
-                  {activityLogMessages.length > 0 ? (
-                    <Flex direction="column" gap="1" className="legacy-log-list">
-                      {activityLogMessages.map((message) => (
-                        <Box key={message.id} className="legacy-log-entry">
-                          <Flex align="center" justify="between" gap="2" wrap="wrap">
-                            <Text size="1" weight="bold">
-                              {message.author}
-                            </Text>
-                            <Text size="1" color="gray">
-                              {formatChatTimestamp(message.sentAt)}
-                            </Text>
-                          </Flex>
-                          <Text
-                            size="1"
-                            color={message.severity === "error" ? "ruby" : "gray"}
-                          >
-                            {message.body}
-                          </Text>
-                        </Box>
-                      ))}
-                    </Flex>
-                  ) : (
+                  <Flex align="center" justify="between" gap="2" wrap="wrap">
                     <Text size="1" color="gray">
-                      Recent activity, connection notices, and chat will appear here.
+                      Recent activity
                     </Text>
-                  )}
+                    <Button
+                      size="1"
+                      variant="ghost"
+                      type="button"
+                      onClick={() => {
+                        setIsActivityLogExpanded((currentValue) => !currentValue);
+                      }}
+                    >
+                      {isActivityLogExpanded ? "Hide" : "Show"}
+                    </Button>
+                  </Flex>
+                  {isActivityLogExpanded ? (
+                    activityLogMessages.length > 0 ? (
+                      <Flex direction="column" gap="1" className="legacy-log-list">
+                        {activityLogMessages.map((message) => (
+                          <Box key={message.id} className="legacy-log-entry">
+                            <Flex align="center" justify="between" gap="2" wrap="wrap">
+                              <Text size="1" weight="bold">
+                                {message.author}
+                              </Text>
+                              <Text size="1" color="gray">
+                                {formatChatTimestamp(message.sentAt)}
+                              </Text>
+                            </Flex>
+                            <Text
+                              size="1"
+                              color={message.severity === "error" ? "ruby" : "gray"}
+                            >
+                              {message.body}
+                            </Text>
+                          </Box>
+                        ))}
+                      </Flex>
+                    ) : (
+                      <Text size="1" color="gray">
+                        Recent activity, connection notices, and chat will appear here.
+                      </Text>
+                    )
+                  ) : null}
                 </>,
               )}
 
@@ -2931,22 +2996,52 @@ export function App() {
                 chatSubtitle,
                 "delay-2",
                 <>
-                  {activeMessages.length > 0 ? (
-                    <Flex direction="column" gap="1" className="legacy-log-list">
-                      {activeMessages.slice(-4).map((message) => (
-                        <Box key={message.id} className="legacy-log-entry">
-                          <Text size="1" weight="bold">
-                            {message.author}
-                          </Text>
-                          <Text
-                            size="1"
-                            color={message.severity === "error" ? "ruby" : "gray"}
-                          >
-                            {message.body}
-                          </Text>
-                        </Box>
-                      ))}
-                    </Flex>
+                  <Flex align="center" justify="between" gap="2" wrap="wrap">
+                    <Text size="1" color="gray">
+                      Chat log
+                    </Text>
+                    <Button
+                      size="1"
+                      variant="ghost"
+                      type="button"
+                      onClick={() => {
+                        setIsChatLogExpanded((currentValue) => !currentValue);
+                      }}
+                    >
+                      {isChatLogExpanded ? "Hide" : "Show"}
+                    </Button>
+                  </Flex>
+                  {isChatLogExpanded ? (
+                    compactChatLogMessages.length > 0 ? (
+                      <Flex
+                        direction="column"
+                        gap="1"
+                        className="legacy-log-list legacy-chat-log-list"
+                      >
+                        {compactChatLogMessages.map((message) => (
+                          <Box key={message.id} className="legacy-log-entry">
+                            <Flex align="center" justify="between" gap="2" wrap="wrap">
+                              <Text size="1" weight="bold">
+                                {message.author}
+                              </Text>
+                              <Text size="1" color="gray">
+                                {formatChatTimestamp(message.sentAt)}
+                              </Text>
+                            </Flex>
+                            <Text
+                              size="1"
+                              color={message.severity === "error" ? "ruby" : "gray"}
+                            >
+                              {message.body}
+                            </Text>
+                          </Box>
+                        ))}
+                      </Flex>
+                    ) : (
+                      <Text size="1" color="gray">
+                        No chat messages yet for this room or direct message.
+                      </Text>
+                    )
                   ) : null}
                   {selectedParticipant ? (
                     <Flex direction="column" gap="1">
