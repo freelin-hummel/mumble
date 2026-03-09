@@ -173,6 +173,7 @@ declare global {
       platform: NodeJS.Platform;
       runSecureVoiceSelfTest?: () => Promise<SecureVoiceSelfTestResult>;
       getState?: () => Promise<AppClientState>;
+      openTalkingPopout?: () => Promise<void>;
       connect?: (options: {
         serverAddress: string;
         nickname: string;

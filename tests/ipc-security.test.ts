@@ -57,6 +57,7 @@ test("preload exposes only the whitelisted app and voice APIs", () => {
 
   void preloadApi.app.runSecureVoiceSelfTest();
   void preloadApi.app.getState();
+  void preloadApi.app.openTalkingPopout();
   void preloadApi.app.connect({
     serverAddress: "voice.example.test:64738",
     nickname: "Scout",
@@ -90,6 +91,7 @@ test("preload exposes only the whitelisted app and voice APIs", () => {
     [
       APP_INVOKE_CHANNELS.runSecureVoiceSelfTest,
       APP_INVOKE_CHANNELS.getState,
+      APP_INVOKE_CHANNELS.openTalkingPopout,
       APP_INVOKE_CHANNELS.connect,
       APP_INVOKE_CHANNELS.rememberServer,
       APP_INVOKE_CHANNELS.disconnect,

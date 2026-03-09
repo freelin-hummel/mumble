@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { registerAppStateIpc } from "./appStateIpc.js";
 import { runSecureVoiceSelfTest } from "./secureVoice.js";
 import {
+  APP_INVOKE_CHANNELS,
   createSecureWebPreferences,
   CSP_VIOLATION_CHANNEL,
   formatCspViolation,
@@ -12,6 +13,7 @@ import {
 import { registerVoiceTransportIpc, shutdownVoiceTransport } from "./voiceTransportIpc.js";
 
 let mainWindow: BrowserWindow | null = null;
+let talkingPopoutWindow: BrowserWindow | null = null;
 let isShuttingDown = false;
 let isContentSecurityPolicyInstalled = false;
 
@@ -38,6 +40,26 @@ const installContentSecurityPolicy = (window: BrowserWindow) => {
   isContentSecurityPolicyInstalled = true;
 };
 
+const loadRendererWindow = async (
+  window: BrowserWindow,
+  view?: typeof TALKING_POPOUT_VIEW,
+) => {
+  const devServerUrl =
+    process.env.VITE_DEV_SERVER_URL ?? process.env.ELECTRON_RENDERER_URL;
+  const search = view ? `?view=${view}` : "";
+  if (devServerUrl) {
+    await window.loadURL(`${devServerUrl}${search}`);
+    return;
+  }
+
+  await window.loadFile(
+    fileURLToPath(new URL("../renderer/index.html", import.meta.url)),
+    search ? { search } : undefined,
+  );
+};
+
+const TALKING_POPOUT_VIEW = "talking-popout";
+
 const createWindow = () => {
   const webPreferences = createSecureWebPreferences(
     fileURLToPath(new URL("../preload/preload.mjs", import.meta.url))
@@ -61,17 +83,48 @@ const createWindow = () => {
     mainWindow?.show();
   });
 
-  const devServerUrl = process.env.VITE_DEV_SERVER_URL ?? process.env.ELECTRON_RENDERER_URL;
-  if (devServerUrl) {
-    mainWindow.loadURL(devServerUrl);
-    mainWindow.webContents.openDevTools({ mode: "detach" });
-  } else {
-    mainWindow.loadFile(fileURLToPath(new URL("../renderer/index.html", import.meta.url)));
+  void loadRendererWindow(mainWindow).then(() => {
+    if (process.env.VITE_DEV_SERVER_URL ?? process.env.ELECTRON_RENDERER_URL) {
+      mainWindow?.webContents.openDevTools({ mode: "detach" });
+    }
+  });
+};
+
+const openTalkingPopout = async () => {
+  if (talkingPopoutWindow && !talkingPopoutWindow.isDestroyed()) {
+    talkingPopoutWindow.focus();
+    return;
   }
+
+  const webPreferences = createSecureWebPreferences(
+    fileURLToPath(new URL("../preload/preload.mjs", import.meta.url))
+  );
+  validateSecureWebPreferences(webPreferences);
+
+  talkingPopoutWindow = new BrowserWindow({
+    width: 320,
+    height: 520,
+    minWidth: 260,
+    minHeight: 320,
+    backgroundColor: "#0d0f14",
+    autoHideMenuBar: true,
+    title: "Mumble Talking Popout",
+    alwaysOnTop: true,
+    webPreferences
+  });
+
+  installContentSecurityPolicy(talkingPopoutWindow);
+  talkingPopoutWindow.on("closed", () => {
+    talkingPopoutWindow = null;
+  });
+  await loadRendererWindow(talkingPopoutWindow, TALKING_POPOUT_VIEW);
 };
 
 app.whenReady().then(() => {
   ipcMain.handle("voice:run-self-test", () => runSecureVoiceSelfTest());
+  ipcMain.handle(APP_INVOKE_CHANNELS.openTalkingPopout, async () => {
+    await openTalkingPopout();
+  });
   ipcMain.on(CSP_VIOLATION_CHANNEL, handleCspViolation);
   registerAppStateIpc();
   registerVoiceTransportIpc();
