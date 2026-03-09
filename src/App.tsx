@@ -16,17 +16,14 @@ import {
   ChatBubbleIcon,
   ChevronDownIcon,
   ChevronUpIcon,
-  Cross2Icon,
   DownloadIcon,
   GlobeIcon,
   LightningBoltIcon,
-  MinusIcon,
   OpenInNewWindowIcon,
   PersonIcon,
   SpeakerOffIcon,
 } from "@radix-ui/react-icons";
 import {
-  type PointerEvent as ReactPointerEvent,
   useCallback,
   useEffect,
   useMemo,
@@ -175,73 +172,11 @@ const BASE_CHANNEL_PADDING = 12;
 const CHANNEL_INDENT_PER_LEVEL = 12;
 const PARTICIPANT_INDENT_OFFSET = 18;
 const MAX_ACTIVITY_LOG_MESSAGES = 12;
-const DOCK_PANEL_MIN_WIDTH = 240;
-const DOCK_PANEL_MIN_HEIGHT = 180;
-const DOCK_PANEL_MINIMIZED_HEIGHT = 48;
 const PREFERRED_VOICE_CAPTURE_MIME_TYPES = [
   "audio/webm;codecs=opus",
   "audio/webm",
   "audio/ogg;codecs=opus",
 ] as const;
-
-type DockPanelId = "log" | "chat" | "self";
-
-type DockPanelLayout = {
-  offsetX: number;
-  offsetY: number;
-  width: number | null;
-  height: number;
-  isClosed: boolean;
-  isMinimized: boolean;
-  zIndex: number;
-};
-
-type DockPanelInteraction = {
-  panelId: DockPanelId;
-  mode: "move" | "resize";
-  startClientX: number;
-  startClientY: number;
-  startOffsetX: number;
-  startOffsetY: number;
-  startWidth: number;
-  startHeight: number;
-};
-
-const createInitialDockPanelLayouts = (): Record<DockPanelId, DockPanelLayout> => ({
-  log: {
-    offsetX: 0,
-    offsetY: 0,
-    width: null,
-    height: 260,
-    isClosed: false,
-    isMinimized: false,
-    zIndex: 1,
-  },
-  chat: {
-    offsetX: 0,
-    offsetY: 0,
-    width: null,
-    height: 260,
-    isClosed: false,
-    isMinimized: false,
-    zIndex: 2,
-  },
-  self: {
-    offsetX: 0,
-    offsetY: 0,
-    width: null,
-    height: 260,
-    isClosed: false,
-    isMinimized: false,
-    zIndex: 3,
-  },
-});
-
-const DOCK_PANEL_TITLES: Record<DockPanelId, string> = {
-  log: "Log",
-  chat: "Chatbar",
-  self: "Self / Configure",
-};
 
 const statusCopy: Record<AppClientConnectionState["status"], string> = {
   disconnected: "Disconnected",
@@ -449,18 +384,8 @@ export function App() {
   const [isConnectionPanelExpanded, setIsConnectionPanelExpanded] = useState(true);
   const [isActivityLogExpanded, setIsActivityLogExpanded] = useState(true);
   const [isChatLogExpanded, setIsChatLogExpanded] = useState(true);
-  const [dockPanels, setDockPanels] = useState<Record<DockPanelId, DockPanelLayout>>(
-    () => createInitialDockPanelLayouts(),
-  );
-  const [activeDockInteraction, setActiveDockInteraction] =
-    useState<DockPanelInteraction | null>(null);
   const outputPreviewRef = useRef<HTMLAudioElement>(null);
   const diagnosticsSectionRef = useRef<HTMLDivElement>(null);
-  const dockPanelRefs = useRef<Record<DockPanelId, HTMLDivElement | null>>({
-    log: null,
-    chat: null,
-    self: null,
-  });
   const pushToTalkPressedRef = useRef(false);
   const voiceActivationRef = useRef(voiceActivation);
   const voiceCaptureMimeTypeRef = useRef<string | null>(null);
@@ -1837,63 +1762,6 @@ export function App() {
     handleShortcutAction,
     shortcutBindings,
   ]);
-  useEffect(() => {
-    if (!activeDockInteraction) {
-      return undefined;
-    }
-
-    const handlePointerMove = (event: PointerEvent) => {
-      const deltaX = event.clientX - activeDockInteraction.startClientX;
-      const deltaY = event.clientY - activeDockInteraction.startClientY;
-
-      setDockPanels((currentPanels) => ({
-        ...currentPanels,
-        [activeDockInteraction.panelId]: {
-          ...currentPanels[activeDockInteraction.panelId],
-          offsetX:
-            activeDockInteraction.mode === "move"
-              ? activeDockInteraction.startOffsetX + deltaX
-              : currentPanels[activeDockInteraction.panelId].offsetX,
-          offsetY:
-            activeDockInteraction.mode === "move"
-              ? activeDockInteraction.startOffsetY + deltaY
-              : currentPanels[activeDockInteraction.panelId].offsetY,
-          width:
-            activeDockInteraction.mode === "resize"
-              ? Math.max(
-                  DOCK_PANEL_MIN_WIDTH,
-                  activeDockInteraction.startWidth + deltaX,
-                )
-              : currentPanels[activeDockInteraction.panelId].width,
-          height:
-            activeDockInteraction.mode === "resize"
-              ? Math.max(
-                  DOCK_PANEL_MIN_HEIGHT,
-                  activeDockInteraction.startHeight + deltaY,
-                )
-              : currentPanels[activeDockInteraction.panelId].height,
-        },
-      }));
-    };
-    const handlePointerUp = () => {
-      setActiveDockInteraction(null);
-    };
-
-    const previousUserSelect = document.body.style.userSelect;
-    const previousCursor = document.body.style.cursor;
-    document.body.style.userSelect = "none";
-    document.body.style.cursor =
-      activeDockInteraction.mode === "move" ? "grabbing" : "nwse-resize";
-    window.addEventListener("pointermove", handlePointerMove);
-    window.addEventListener("pointerup", handlePointerUp);
-
-    return () => {
-      document.body.style.userSelect = previousUserSelect;
-      document.body.style.cursor = previousCursor;
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", handlePointerUp);
-    };
-  }, [activeDockInteraction]);
 
   const openDiagnostics = () => {
     if (!appState.preferences.showLatencyDetails) {
@@ -1950,91 +1818,6 @@ export function App() {
     setThemeError(null);
     setThemeMessage("Default dark theme restored.");
   }, []);
-  const bringDockPanelToFront = useCallback((panelId: DockPanelId) => {
-    setDockPanels((currentPanels) => {
-      const highestZIndex = Math.max(
-        ...Object.values(currentPanels).map((panel) => panel.zIndex),
-      );
-      if (currentPanels[panelId].zIndex === highestZIndex) {
-        return currentPanels;
-      }
-
-      return {
-        ...currentPanels,
-        [panelId]: {
-          ...currentPanels[panelId],
-          zIndex: highestZIndex + 1,
-        },
-      };
-    });
-  }, []);
-  const closeDockPanel = useCallback((panelId: DockPanelId) => {
-    setDockPanels((currentPanels) => ({
-      ...currentPanels,
-      [panelId]: {
-        ...currentPanels[panelId],
-        isClosed: true,
-      },
-    }));
-  }, []);
-  const restoreDockPanel = useCallback((panelId: DockPanelId) => {
-    bringDockPanelToFront(panelId);
-    setDockPanels((currentPanels) => ({
-      ...currentPanels,
-      [panelId]: {
-        ...currentPanels[panelId],
-        isClosed: false,
-        isMinimized: false,
-      },
-    }));
-  }, [bringDockPanelToFront]);
-  const toggleDockPanelMinimized = useCallback((panelId: DockPanelId) => {
-    bringDockPanelToFront(panelId);
-    setDockPanels((currentPanels) => ({
-      ...currentPanels,
-      [panelId]: {
-        ...currentPanels[panelId],
-        isMinimized: !currentPanels[panelId].isMinimized,
-      },
-    }));
-  }, [bringDockPanelToFront]);
-  const startDockPanelInteraction = useCallback(
-    (
-      panelId: DockPanelId,
-      mode: DockPanelInteraction["mode"],
-      event: ReactPointerEvent<HTMLElement>,
-    ) => {
-      if (
-        event.button !== 0 ||
-        event.altKey ||
-        event.ctrlKey ||
-        event.metaKey ||
-        event.shiftKey
-      ) {
-        return;
-      }
-
-      const panelElement = dockPanelRefs.current[panelId];
-      if (!panelElement) {
-        return;
-      }
-
-      const panel = dockPanels[panelId];
-      bringDockPanelToFront(panelId);
-      setActiveDockInteraction({
-        panelId,
-        mode,
-        startClientX: event.clientX,
-        startClientY: event.clientY,
-        startOffsetX: panel.offsetX,
-        startOffsetY: panel.offsetY,
-        startWidth: panel.width ?? panelElement.getBoundingClientRect().width,
-        startHeight: panel.height,
-      });
-      event.preventDefault();
-    },
-    [bringDockPanelToFront, dockPanels],
-  );
 
   const sendChatMessage = async () => {
     if (!chatDraft.trim()) {
@@ -2167,112 +1950,26 @@ export function App() {
     appState.connection.status === "connected"
       ? `Connected to ${appState.connection.serverAddress || serverAddress || "server"} as ${appState.connection.nickname || nickname || "guest"} · ${participantsSubtitle.toLowerCase()}`
       : "You are currently in minimal view but not connected to a server. Use the toolbar to connect or open the talking popout.";
-  const closedDockPanels = (Object.keys(dockPanels) as DockPanelId[]).filter(
-    (panelId) => dockPanels[panelId].isClosed,
-  );
-  const renderDockPanel = (
-    panelId: DockPanelId,
+  const renderStackPanel = (
+    title: string,
     subtitle: string,
     delayClass: string,
     content: JSX.Element,
-  ) => {
-    const panel = dockPanels[panelId];
-    if (panel.isClosed) {
-      return null;
-    }
-
-    const title = DOCK_PANEL_TITLES[panelId];
-
-    return (
-      <Box
-        key={panelId}
-        ref={(element) => {
-          dockPanelRefs.current[panelId] = element;
-        }}
-        className={`legacy-dock-panel-shell${panel.isMinimized ? " is-minimized" : ""}`}
-        style={{
-          transform: `translate(${panel.offsetX}px, ${panel.offsetY}px)`,
-          zIndex: panel.zIndex,
-          width: panel.width ? `${panel.width}px` : undefined,
-          height: `${panel.isMinimized ? DOCK_PANEL_MINIMIZED_HEIGHT : panel.height}px`,
-        }}
-        onPointerDown={() => {
-          bringDockPanelToFront(panelId);
-        }}
-      >
-        <Card className={`section-card compact-panel legacy-dock-panel fade-in ${delayClass}`}>
-          <Flex
-            className="legacy-dock-panel-header"
-            align="center"
-            justify="between"
-            gap="2"
-            onPointerDown={(event) => {
-              startDockPanelInteraction(panelId, "move", event);
-            }}
-          >
-            <Flex direction="column" gap="1">
-              <Text size="2" weight="bold">
-                {title}
-              </Text>
-              <Text size="1" color="gray">
-                {subtitle}
-              </Text>
-            </Flex>
-            <Flex align="center" gap="1" className="legacy-dock-panel-controls">
-              <IconButton
-                size="1"
-                variant="ghost"
-                type="button"
-                aria-label={
-                  panel.isMinimized ? `Restore ${title}` : `Minimize ${title}`
-                }
-                onPointerDown={(event) => {
-                  event.stopPropagation();
-                }}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  toggleDockPanelMinimized(panelId);
-                }}
-              >
-                {panel.isMinimized ? <OpenInNewWindowIcon /> : <MinusIcon />}
-              </IconButton>
-              <IconButton
-                size="1"
-                variant="ghost"
-                color="ruby"
-                type="button"
-                aria-label={`Close ${title}`}
-                onPointerDown={(event) => {
-                  event.stopPropagation();
-                }}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  closeDockPanel(panelId);
-                }}
-              >
-                <Cross2Icon />
-              </IconButton>
-            </Flex>
-          </Flex>
-          {!panel.isMinimized ? (
-            <Flex direction="column" gap="2" className="legacy-dock-panel-body">
-              {content}
-            </Flex>
-          ) : null}
-          {!panel.isMinimized ? (
-            <button
-              type="button"
-              className="legacy-dock-panel-resize-handle"
-              aria-label={`Resize ${title}`}
-              onPointerDown={(event) => {
-                startDockPanelInteraction(panelId, "resize", event);
-              }}
-            />
-          ) : null}
-        </Card>
-      </Box>
-    );
-  };
+  ) => (
+    <Card className={`section-card compact-panel legacy-dock-panel fade-in ${delayClass}`}>
+      <Flex className="legacy-dock-panel-header" direction="column" gap="1">
+        <Text size="2" weight="bold">
+          {title}
+        </Text>
+        <Text size="1" color="gray">
+          {subtitle}
+        </Text>
+      </Flex>
+      <Flex direction="column" gap="2" className="legacy-dock-panel-body">
+        {content}
+      </Flex>
+    </Card>
+  );
 
   if (isTalkingPopout) {
     return (
@@ -2939,9 +2636,9 @@ export function App() {
               </Flex>
             </Card>
 
-            <Grid columns={{ initial: "1", md: "3" }} gap="2" className="legacy-dock-grid">
-              {renderDockPanel(
-                "log",
+            <Grid columns="1" gap="2" className="legacy-dock-grid">
+              {renderStackPanel(
+                "Log",
                 "Activity log",
                 "delay-1",
                 <>
@@ -2991,8 +2688,8 @@ export function App() {
                 </>,
               )}
 
-              {renderDockPanel(
-                "chat",
+              {renderStackPanel(
+                "Chatbar",
                 chatSubtitle,
                 "delay-2",
                 <>
@@ -3132,8 +2829,8 @@ export function App() {
                 </>,
               )}
 
-              {renderDockPanel(
-                "self",
+              {renderStackPanel(
+                "Self / Configure",
                 "Voice controls, transport, and preferences",
                 "delay-3",
                 <>
@@ -3336,25 +3033,6 @@ export function App() {
                 </>,
               )}
             </Grid>
-            {closedDockPanels.length > 0 ? (
-              <Flex className="legacy-dock-restore-strip" gap="2" wrap="wrap" align="center">
-                <Text size="1" color="gray">
-                  Closed panels
-                </Text>
-                {closedDockPanels.map((panelId) => (
-                  <Button
-                    key={panelId}
-                    size="1"
-                    variant="soft"
-                    onClick={() => {
-                      restoreDockPanel(panelId);
-                    }}
-                  >
-                    Restore {DOCK_PANEL_TITLES[panelId]}
-                  </Button>
-                ))}
-              </Flex>
-            ) : null}
 
             <Card className="section-card legacy-minimal-note">
               <Text size="1">{minimalViewNote}</Text>
