@@ -178,6 +178,8 @@ const PREFERRED_VOICE_CAPTURE_MIME_TYPES = [
   "audio/ogg;codecs=opus",
 ] as const;
 
+type StackPanelId = "log" | "chat" | "self";
+
 const statusCopy: Record<AppClientConnectionState["status"], string> = {
   disconnected: "Disconnected",
   connecting: "Connecting…",
@@ -384,6 +386,13 @@ export function App() {
   const [isConnectionPanelExpanded, setIsConnectionPanelExpanded] = useState(true);
   const [isActivityLogExpanded, setIsActivityLogExpanded] = useState(true);
   const [isChatLogExpanded, setIsChatLogExpanded] = useState(true);
+  const [collapsedStackPanels, setCollapsedStackPanels] = useState<
+    Record<StackPanelId, boolean>
+  >({
+    log: false,
+    chat: false,
+    self: false,
+  });
   const outputPreviewRef = useRef<HTMLAudioElement>(null);
   const diagnosticsSectionRef = useRef<HTMLDivElement>(null);
   const pushToTalkPressedRef = useRef(false);
@@ -1950,26 +1959,52 @@ export function App() {
     appState.connection.status === "connected"
       ? `Connected to ${appState.connection.serverAddress || serverAddress || "server"} as ${appState.connection.nickname || nickname || "guest"} · ${participantsSubtitle.toLowerCase()}`
       : "You are currently in minimal view but not connected to a server. Use the toolbar to connect or open the talking popout.";
+  const toggleStackPanelCollapsed = (panelId: StackPanelId) => {
+    setCollapsedStackPanels((currentPanels) => ({
+      ...currentPanels,
+      [panelId]: !currentPanels[panelId],
+    }));
+  };
   const renderStackPanel = (
+    panelId: StackPanelId,
     title: string,
     subtitle: string,
     delayClass: string,
     content: JSX.Element,
-  ) => (
-    <Card className={`section-card compact-panel legacy-dock-panel fade-in ${delayClass}`}>
-      <Flex className="legacy-dock-panel-header" direction="column" gap="1">
-        <Text size="2" weight="bold">
-          {title}
-        </Text>
-        <Text size="1" color="gray">
-          {subtitle}
-        </Text>
-      </Flex>
-      <Flex direction="column" gap="2" className="legacy-dock-panel-body">
-        {content}
-      </Flex>
-    </Card>
-  );
+  ) => {
+    const isCollapsed = collapsedStackPanels[panelId];
+
+    return (
+      <Card
+        className={`section-card compact-panel legacy-dock-panel fade-in ${delayClass} ${isCollapsed ? "is-collapsed" : ""}`}
+      >
+        <Flex className="legacy-dock-panel-header" align="start" justify="between" gap="2">
+          <Flex direction="column" gap="1">
+            <Text size="2" weight="bold">
+              {title}
+            </Text>
+            <Text size="1" color="gray">
+              {subtitle}
+            </Text>
+          </Flex>
+          <IconButton
+            size="1"
+            variant="ghost"
+            type="button"
+            aria-label={isCollapsed ? `Expand ${title}` : `Collapse ${title}`}
+            onClick={() => toggleStackPanelCollapsed(panelId)}
+          >
+            {isCollapsed ? <ChevronDownIcon /> : <ChevronUpIcon />}
+          </IconButton>
+        </Flex>
+        {!isCollapsed ? (
+          <Flex direction="column" gap="2" className="legacy-dock-panel-body">
+            {content}
+          </Flex>
+        ) : null}
+      </Card>
+    );
+  };
 
   if (isTalkingPopout) {
     return (
@@ -2638,6 +2673,7 @@ export function App() {
 
             <Grid columns="1" gap="2" className="legacy-dock-grid">
               {renderStackPanel(
+                "log",
                 "Log",
                 "Activity log",
                 "delay-1",
@@ -2689,6 +2725,7 @@ export function App() {
               )}
 
               {renderStackPanel(
+                "chat",
                 "Chatbar",
                 chatSubtitle,
                 "delay-2",
@@ -2830,6 +2867,7 @@ export function App() {
               )}
 
               {renderStackPanel(
+                "self",
                 "Self / Configure",
                 "Voice controls, transport, and preferences",
                 "delay-3",
