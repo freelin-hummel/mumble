@@ -2535,7 +2535,7 @@ export function App() {
               <Flex className="legacy-session-strip" align="center" justify="between" gap="2" wrap="wrap">
                 <Flex align="center" gap="2" wrap="wrap">
                   <Text size="1" color="gray">
-                    {appState.connection.serverAddress || trimmedServerAddress || "No server selected"}
+                    {appState.connection.serverAddress || trimmedServerAddress || "Not connected"}
                   </Text>
                   <Badge size="1" variant="soft">
                     {appState.connection.nickname || nickname || "Guest"}
